@@ -250,7 +250,9 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 
 - 当前本机有 1 个 Web 项目。
 - 构建时会下载并打包 CEF。
-- 应验证本地资源加载、Wallpaper Engine JavaScript API、音频、鼠标输入和 GPU 加速。
+- 首次本机测试只有空白画面。根因是 CEF `OnPaint()` 调用 `glBindTexture()` 时传入了 wallpaper framebuffer ID，而不是其颜色纹理 ID，导致浏览器像素无法上传到最终采样的纹理。
+- 已将 `RenderHandler::texture()` 改为返回 `getWallpaperTexture()`，完整构建和链接成功。
+- 修复后的桌面复测仍未映射 GLFW 窗口，进程停留在输出初始化之前，也没有创建可见的 CEF 子进程。这表明纹理 ID 错误之外还存在独立的 CEF 初始化问题；必须先解决初始化，才能验证 `OnPaint`、本地资源加载、Wallpaper Engine JavaScript API、音频、鼠标输入、resize 和 GPU 加速。
 
 ## 6. 安装和构建方面的其他风险
 
