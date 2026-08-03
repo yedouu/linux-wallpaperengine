@@ -142,7 +142,7 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 
 ### 4.3 普通窗口比例和运行时缩放异常
 
-状态：**第一版修复仍可复现；已根据截图追加修复，待本机桌面复测**
+状态：**已定位最终根因并在本机 GNOME X11 桌面验证通过**
 
 本机现象：普通窗口默认没有按素材比例完整显示；拖动窗口边缘改变尺寸后，画面损坏且恢复原尺寸也不能恢复。
 
@@ -150,25 +150,27 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 
 - 普通窗口默认尺寸为 `640x480`，默认 `DefaultUVs + ClampUVs` 不保证完整显示素材比例，越界纹理还会延展边缘像素。
 - GLFW 事件原先在本帧绘制和交换缓冲之后才处理，`GLFWWindowOutput` 也在绘制之后才读取 framebuffer 尺寸，因此 resize 时会用旧 viewport 绘制到新 framebuffer。
-- 没有 framebuffer-size callback，也没有过滤最小化或窗口管理器调整过程中出现的零尺寸，异常尺寸可能进入 viewport 和 UV 状态。
+- 没有过滤最小化或窗口管理器调整过程中出现的零尺寸，异常尺寸可能进入 viewport 和 UV 状态。
+- 更关键的是，普通预览窗口也创建了 X11 全屏检测器。当检测器把当前桌面的其他窗口判断为全屏后，应用进入暂停分支，不再调用 GLFW 事件处理和绘制；此时扩大窗口只会暴露从未重绘的 back buffer 区域。
 
 已实施的修复：
 
 - 当用户没有显式提供 `--scaling` 和 `--clamp` 时，普通窗口和固定几何窗口默认使用 `fit + border`，完整保持素材比例并用边框填充空白区域；桌面背景模式继续保持原有默认值。
-- 注册 GLFW framebuffer-size callback，并缓存最新的物理 framebuffer 尺寸。
 - 在窗口模式的每帧绘制前处理事件并更新 viewport，使本帧 framebuffer 与 viewport 一致。
 - framebuffer 宽或高为零时保留上一个有效 viewport、等待恢复事件并跳过绘制，避免污染 UV 状态。
 - 同步更新窗口 viewport 的物理尺寸和逻辑尺寸。
 - X11 根窗口输出仍在绘制之后复制图像，未改变其输出时序。
+- 普通和显式预览窗口改用无操作的全屏检测器；只有真正的 `DESKTOP_BACKGROUND` 模式才启用全屏暂停。
 
-第一次桌面复测仍能复现：窗口右侧出现重复的竖条，底部出现重复横条，恢复尺寸后仍然存在。截图证明异常位于最终默认 framebuffer/back buffer，而不是 Scene 内部图层或鼠标视差。
+第一次桌面复测仍能复现：窗口右侧出现重复的竖条，底部出现重复横条，恢复尺寸后仍然存在。禁用视差后现象不变，因此排除了 Scene 鼠标视差。
 
 追加修复：
 
-- 不再把 framebuffer-size callback 的缓存值作为权威尺寸。GNOME Mutter 连续调整窗口时可能合并 `ConfigureNotify`，缓存可能停留在中间尺寸；现在每帧处理事件后通过 `glfwGetFramebufferSize()` 直接查询当前 GLX drawable。
 - 在最终合成前显式绑定默认 framebuffer，禁用 scissor，恢复 RGBA 和深度写入，设置覆盖完整 framebuffer 的 viewport，然后清理颜色和深度缓冲，避免新扩展区域保留旧 back buffer 或 effect pass 状态。
+- 在真实桌面分别记录 X11 客户区、GLFW framebuffer 和 GLX drawable。默认运行时 resize 后没有新日志，证明渲染循环已暂停；添加 `--no-fullscreen-pause` 后三层尺寸同时从 `640x480` 更新为 `800x600`，完整重绘。
+- 根据该 A/B 结果，将全屏暂停限制到桌面背景模式，而不是继续修改 framebuffer 尺寸来源。
 
-验证：完整构建和链接成功。自动化环境没有可用的 Xvfb，仍需在真实 GNOME X11 会话中反复调整、最小化和恢复窗口验证视觉结果。
+验证：完整构建和链接成功。在真实 GNOME X11 桌面使用不带 `--no-fullscreen-pause`、不带 `--disable-parallax` 的普通命令启动，将窗口从 `640x480` 自动调整为 `800x600` 后截图完整，比例正确且没有竖条或横条。
 
 ### 4.4 GNOME Wayland 不支持现有 Layer Shell 路径
 
@@ -196,7 +198,7 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 
 ### 4.6 全屏暂停行为需要桌面实测
 
-状态：**代码已修复并通过编译，待本机桌面复测**
+状态：**崩溃和预览窗口误暂停均已修复；桌面背景模式仍需后续验证**
 
 本机现象：默认 `NORMAL_WINDOW` 模式启动后，X server 报告 `BadWindow (invalid Window parameter)`，失败请求为 `X_QueryTree`，程序随即退出。
 
@@ -206,9 +208,11 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 - 查询当前窗口的子节点后，代码原先在 `schildren` 非空时错误释放外层的 `children`，随后仍读取并再次释放 `children`；现已改为分别释放 `schildren` 和 `children`。
 - 已增加 X display、根窗口、GLFW 窗口和原生 X11 窗口的空值检查；无法打开 X display 时禁用全屏检测，而不是继续解引用空指针。
 
-修复验证：项目已完成增量编译和链接。由于自动化环境无法访问桌面 `DISPLAY=:1`，还需要在真实桌面中确认 `BadWindow` 已消失并验证全屏暂停行为。
+新增确认的问题：全屏检测本来是桌面壁纸的节能功能，却也应用在 `NORMAL_WINDOW` 和 `EXPLICIT_WINDOW`。一旦检测到其他全屏窗口，预览窗口停止处理事件和绘制，resize 后出现未重绘条纹。
 
-临时回退：如果桌面复测仍有问题，可以添加 `--no-fullscreen-pause`。这会使用无操作的全屏检测器，普通窗口仍可用于拖动和缩放测试，但全屏应用出现时壁纸不会自动暂停。
+修复验证：普通和显式预览窗口现在使用无操作检测器，只有 `DESKTOP_BACKGROUND` 创建平台全屏检测器。已在真实桌面确认默认普通窗口不会再因其他窗口触发暂停，resize 能继续处理并完整重绘。
+
+临时回退：如果未来桌面背景模式的全屏检测仍有问题，可以添加 `--no-fullscreen-pause`；普通预览窗口不再需要该参数。
 
 建议方案：
 

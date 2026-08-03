@@ -100,9 +100,6 @@ void GLFWOpenGLDriver::hideWindow () { glfwHideWindow (this->m_window); }
 glm::ivec2 GLFWOpenGLDriver::getFramebufferSize () const {
     glm::ivec2 size;
 
-    // Query GLFW directly instead of relying on resize callback state. Mutter
-    // can coalesce ConfigureNotify events during an interactive resize, while
-    // this query returns the dimensions of the current GLX drawable.
     glfwGetFramebufferSize (this->m_window, &size.x, &size.y);
 
     return size;

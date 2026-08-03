@@ -83,7 +83,12 @@ std::unique_ptr<Detectors::FullScreenDetector> VideoFactories::createFullscreenD
 ) {
     const auto it = this->m_fullscreenFactories.find (xdgSessionType);
 
-    if (it == this->m_fullscreenFactories.end () || !context.settings.render.pauseOnFullscreen) {
+    // Fullscreen pausing is a desktop-wallpaper optimization. Applying it to a
+    // normal or explicit preview window stops that window's event loop whenever
+    // another application is fullscreen, leaving resize events unprocessed and
+    // newly exposed back-buffer areas unpainted.
+    if (context.settings.render.mode != ApplicationContext::DESKTOP_BACKGROUND
+	|| it == this->m_fullscreenFactories.end () || !context.settings.render.pauseOnFullscreen) {
 	return std::make_unique<Detectors::FullScreenDetector> (context);
     }
 
