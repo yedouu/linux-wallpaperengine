@@ -140,7 +140,30 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 
 建议方案：将“普通预览窗口”“固定几何窗口”和“桌面窗口”保持为三个明确模式。普通预览保留窗口装饰和缩放；固定几何窗口维持当前行为；桌面窗口使用独立的 GNOME X11/EWMH 集成，避免把相互冲突的行为堆叠到同一选项。
 
-### 4.3 GNOME Wayland 不支持现有 Layer Shell 路径
+### 4.3 普通窗口比例和运行时缩放异常
+
+状态：**代码已修复并通过编译，待本机桌面复测**
+
+本机现象：普通窗口默认没有按素材比例完整显示；拖动窗口边缘改变尺寸后，画面损坏且恢复原尺寸也不能恢复。
+
+已确认的问题：
+
+- 普通窗口默认尺寸为 `640x480`，默认 `DefaultUVs + ClampUVs` 不保证完整显示素材比例，越界纹理还会延展边缘像素。
+- GLFW 事件原先在本帧绘制和交换缓冲之后才处理，`GLFWWindowOutput` 也在绘制之后才读取 framebuffer 尺寸，因此 resize 时会用旧 viewport 绘制到新 framebuffer。
+- 没有 framebuffer-size callback，也没有过滤最小化或窗口管理器调整过程中出现的零尺寸，异常尺寸可能进入 viewport 和 UV 状态。
+
+已实施的修复：
+
+- 当用户没有显式提供 `--scaling` 和 `--clamp` 时，普通窗口和固定几何窗口默认使用 `fit + border`，完整保持素材比例并用边框填充空白区域；桌面背景模式继续保持原有默认值。
+- 注册 GLFW framebuffer-size callback，并缓存最新的物理 framebuffer 尺寸。
+- 在窗口模式的每帧绘制前处理事件并更新 viewport，使本帧 framebuffer 与 viewport 一致。
+- framebuffer 宽或高为零时保留上一个有效 viewport、等待恢复事件并跳过绘制，避免污染 UV 状态。
+- 同步更新窗口 viewport 的物理尺寸和逻辑尺寸。
+- X11 根窗口输出仍在绘制之后复制图像，未改变其输出时序。
+
+验证：完整构建和链接成功。自动化环境没有可用的 Xvfb，仍需在真实 GNOME X11 会话中反复调整、最小化和恢复窗口验证视觉结果。
+
+### 4.4 GNOME Wayland 不支持现有 Layer Shell 路径
 
 状态：**架构限制**
 
@@ -151,7 +174,7 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 - 当前优先支持 GNOME X11。
 - 如果未来支持 GNOME Wayland，需要 GNOME Shell 扩展、专用 Mutter 集成或其他 GNOME 可接受的嵌入机制，不能直接复用 wlroots Layer Shell 方案。
 
-### 4.4 多显示器桌面窗口管理不足
+### 4.5 多显示器桌面窗口管理不足
 
 状态：**待设计和验证**
 
@@ -164,7 +187,7 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 - 如果不同刷新率或 GPU 驱动导致单窗口方案异常，再实现同一进程管理多个 GLFW 窗口，而不是多个独立进程。
 - 监听 XRandR 输出变化，显示器热插拔后重新计算几何布局。
 
-### 4.5 全屏暂停行为需要桌面实测
+### 4.6 全屏暂停行为需要桌面实测
 
 状态：**代码已修复并通过编译，待本机桌面复测**
 
@@ -186,7 +209,7 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 - 增加调试日志，记录活动窗口、`_NET_WM_STATE_FULLSCREEN` 和暂停状态变化。
 - 后续提供应用忽略列表，并将 Wayland 专用的过滤能力扩展到 X11。
 
-### 4.6 混合显卡选择尚未验证
+### 4.7 混合显卡选择尚未验证
 
 状态：**待验证**
 

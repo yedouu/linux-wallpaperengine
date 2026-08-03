@@ -246,6 +246,8 @@ ApplicationContext::ApplicationContext (int argc, char* argv[]) : m_argc (argc),
 
 void ApplicationContext::loadSettingsFromArgv () {
     std::string lastScreen;
+    bool windowScalingSpecified = false;
+    bool windowClampSpecified = false;
 
     argparse::ArgumentParser program ("linux-wallpaperengine", "0.0", argparse::default_arguments::help);
 
@@ -406,7 +408,7 @@ void ApplicationContext::loadSettingsFromArgv () {
 	    "or --screen-span output, or the default background if no other background is specified"
 	)
 	.choices ("stretch", "fit", "fill", "default")
-	.action ([this, &lastScreen] (const std::string& value) -> void {
+	.action ([this, &lastScreen, &windowScalingSpecified] (const std::string& value) -> void {
 	    WallpaperEngine::Render::WallpaperState::TextureUVsScaling mode;
 
 	    if (value == "stretch") {
@@ -429,6 +431,7 @@ void ApplicationContext::loadSettingsFromArgv () {
 		}
 	    } else {
 		this->settings.render.window.scalingMode = mode;
+		windowScalingSpecified = true;
 	    }
 	})
 	.append ();
@@ -438,7 +441,7 @@ void ApplicationContext::loadSettingsFromArgv () {
 	    "or --screen-span output, or the default background if no other background is specified"
 	)
 	.choices ("clamp", "border", "repeat")
-	.action ([this, &lastScreen] (const std::string& value) -> void {
+	.action ([this, &lastScreen, &windowClampSpecified] (const std::string& value) -> void {
 	    TextureFlags flags;
 
 	    if (value == "clamp") {
@@ -459,6 +462,7 @@ void ApplicationContext::loadSettingsFromArgv () {
 		}
 	    } else {
 		this->settings.render.window.clamp = flags;
+		windowClampSpecified = true;
 	    }
 	})
 	.append ();
@@ -660,6 +664,18 @@ void ApplicationContext::loadSettingsFromArgv () {
 
 	if (this->settings.general.defaultBackground.empty ()) {
 	    throw std::runtime_error ("At least one background ID must be specified");
+	}
+
+	// Window previews should preserve the wallpaper's aspect ratio by default.
+	// Keep the existing desktop defaults unless the user explicitly requests a mode.
+	if (this->settings.render.mode != DESKTOP_BACKGROUND) {
+	    if (!windowScalingSpecified) {
+		this->settings.render.window.scalingMode
+		    = WallpaperEngine::Render::WallpaperState::TextureUVsScaling::ZoomFitUVs;
+	    }
+	    if (!windowClampSpecified) {
+		this->settings.render.window.clamp = TextureFlags_ClampUVsBorder;
+	    }
 	}
 
 	this->settings.audio.volume = std::max (0, std::min (this->settings.audio.volume, 128));

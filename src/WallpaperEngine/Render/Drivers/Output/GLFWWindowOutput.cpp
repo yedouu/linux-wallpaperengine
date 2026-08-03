@@ -30,6 +30,7 @@ GLFWWindowOutput::GLFWWindowOutput (ApplicationContext& context, VideoDriver& dr
     // register the default viewport
     this->m_viewports["default"]
 	= new GLFWOutputViewport { { 0, 0, this->m_fullWidth, this->m_fullHeight }, "default" };
+    this->m_viewports["default"]->logicalSize = { this->m_fullWidth, this->m_fullHeight };
 }
 
 void GLFWWindowOutput::repositionWindow () const {
@@ -63,4 +64,5 @@ void GLFWWindowOutput::updateRender () const {
 
     // update the default viewport
     this->m_viewports["default"]->viewport = { 0, 0, this->m_fullWidth, this->m_fullHeight };
+    this->m_viewports["default"]->logicalSize = { this->m_fullWidth, this->m_fullHeight };
 }
