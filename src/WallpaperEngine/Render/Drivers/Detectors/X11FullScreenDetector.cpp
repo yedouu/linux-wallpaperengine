@@ -7,6 +7,9 @@
 #include "WallpaperEngine/Render/Drivers/GLFWOpenGLDriver.h"
 #include "WallpaperEngine/Render/Drivers/VideoFactories.h"
 
+#define GLFW_EXPOSE_NATIVE_X11
+#include <GLFW/glfw3native.h>
+
 namespace WallpaperEngine::Render::Drivers::Detectors {
 void CustomXIOErrorExitHandler (Display* dsp, void* userdata) {
     const auto context = static_cast<X11FullScreenDetector*> (userdata);
@@ -52,30 +55,53 @@ X11FullScreenDetector::X11FullScreenDetector (Application::ApplicationContext& a
 X11FullScreenDetector::~X11FullScreenDetector () { this->stop (); }
 
 bool X11FullScreenDetector::anythingFullscreen () const {
+    if (this->m_display == nullptr || this->m_root == None) {
+	return false;
+    }
+
     // stop rendering if anything is fullscreen
     bool isFullscreen = false;
     XWindowAttributes attribs;
     Window _;
-    Window* children;
-    unsigned int nchildren;
+    Window* children = nullptr;
+    unsigned int nchildren = 0;
 
     if (!XQueryTree (this->m_display, this->m_root, &_, &_, &children, &nchildren)) {
 	return false;
     }
 
-    const auto ourWindow = reinterpret_cast<Window> (dynamic_cast<GLFWOpenGLDriver&> (this->m_driver).getWindow ());
-    Window parentWindow;
+    const auto glfwWindow = dynamic_cast<GLFWOpenGLDriver&> (this->m_driver).getWindow ();
+    if (glfwWindow == nullptr) {
+	if (children != nullptr) {
+	    XFree (children);
+	}
+	return false;
+    }
+
+    const Window ourWindow = glfwGetX11Window (glfwWindow);
+    if (ourWindow == None) {
+	if (children != nullptr) {
+	    XFree (children);
+	}
+	return false;
+    }
+
+    Window parentWindow = None;
 
     {
-	Window root, *schildren = nullptr;
-	unsigned int num_children;
+	Window root = None;
+	Window* schildren = nullptr;
+	unsigned int numChildren = 0;
 
-	if (!XQueryTree (this->m_display, ourWindow, &root, &parentWindow, &schildren, &num_children)) {
+	if (!XQueryTree (this->m_display, ourWindow, &root, &parentWindow, &schildren, &numChildren)) {
+	    if (children != nullptr) {
+		XFree (children);
+	    }
 	    return false;
 	}
 
-	if (schildren) {
-	    XFree (children);
+	if (schildren != nullptr) {
+	    XFree (schildren);
 	}
     }
 
@@ -103,7 +129,9 @@ bool X11FullScreenDetector::anythingFullscreen () const {
 	}
     }
 
-    XFree (children);
+    if (children != nullptr) {
+	XFree (children);
+    }
 
     return isFullscreen;
 }
@@ -115,6 +143,11 @@ void X11FullScreenDetector::reset () {
 
 void X11FullScreenDetector::initialize () {
     this->m_display = XOpenDisplay (nullptr);
+
+    if (this->m_display == nullptr) {
+	sLog.error ("Cannot open the X display, fullscreen detection will be disabled");
+	return;
+    }
 
     // set the error handling to try and recover from X disconnections
 #ifdef HAVE_XSETIOERROREXITHANDLER
