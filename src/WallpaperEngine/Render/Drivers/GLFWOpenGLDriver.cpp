@@ -54,10 +54,6 @@ GLFWOpenGLDriver::GLFWOpenGLDriver (const char* windowTitle, ApplicationContext&
 	sLog.exception ("Cannot create window");
     }
 
-    glfwSetWindowUserPointer (this->m_window, this);
-    glfwGetFramebufferSize (this->m_window, &this->m_framebufferSize.x, &this->m_framebufferSize.y);
-    glfwSetFramebufferSizeCallback (this->m_window, GLFWOpenGLDriver::framebufferSizeCallback);
-
     // make context current, required for glew initialization
     glfwMakeContextCurrent (this->m_window);
 
@@ -102,7 +98,14 @@ void GLFWOpenGLDriver::showWindow () { glfwShowWindow (this->m_window); }
 void GLFWOpenGLDriver::hideWindow () { glfwHideWindow (this->m_window); }
 
 glm::ivec2 GLFWOpenGLDriver::getFramebufferSize () const {
-    return this->m_framebufferSize;
+    glm::ivec2 size;
+
+    // Query GLFW directly instead of relying on resize callback state. Mutter
+    // can coalesce ConfigureNotify events during an interactive resize, while
+    // this query returns the dimensions of the current GLX drawable.
+    glfwGetFramebufferSize (this->m_window, &size.x, &size.y);
+
+    return size;
 }
 
 uint32_t GLFWOpenGLDriver::getFrameCounter () const { return this->m_frameCounter; }
@@ -118,10 +121,12 @@ void GLFWOpenGLDriver::dispatchEventQueue () {
 
     if (this->m_context.settings.render.mode == ApplicationContext::NORMAL_WINDOW
 	|| this->m_context.settings.render.mode == ApplicationContext::EXPLICIT_WINDOW) {
+	const auto framebufferSize = this->getFramebufferSize ();
+
 	// Minimized windows can temporarily have a zero-sized framebuffer. Keep the
 	// last valid viewport and wait for a restore event instead of feeding zero
 	// dimensions into viewport and UV calculations.
-	if (this->m_framebufferSize.x <= 0 || this->m_framebufferSize.y <= 0) {
+	if (framebufferSize.x <= 0 || framebufferSize.y <= 0) {
 	    glfwWaitEventsTimeout (0.1);
 	    return;
 	}
@@ -129,7 +134,15 @@ void GLFWOpenGLDriver::dispatchEventQueue () {
 	this->m_output->updateRender ();
     }
 
-    // clear the screen
+    // Scene and effect passes leave their own framebuffer and write state
+    // behind. Restore a complete default-framebuffer state before clearing so
+    // every pixel of a newly resized back buffer is initialized.
+    glBindFramebuffer (GL_FRAMEBUFFER, 0);
+    glDisable (GL_SCISSOR_TEST);
+    glColorMask (GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask (GL_TRUE);
+    const auto framebufferSize = this->getFramebufferSize ();
+    glViewport (0, 0, framebufferSize.x, framebufferSize.y);
     glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     for (const auto& [screen, viewport] : this->m_output->getViewports ()) {
@@ -176,14 +189,6 @@ void GLFWOpenGLDriver::dispatchEventQueue () {
     // ensure the frame time is correct to not overrun FPS
     if ((endTime - startTime) < minimumTime) {
 	usleep ((minimumTime - (endTime - startTime)) * CLOCKS_PER_SEC);
-    }
-}
-
-void GLFWOpenGLDriver::framebufferSizeCallback (GLFWwindow* window, const int width, const int height) {
-    auto* driver = static_cast<GLFWOpenGLDriver*> (glfwGetWindowUserPointer (window));
-
-    if (driver != nullptr) {
-	driver->m_framebufferSize = { width, height };
     }
 }
 

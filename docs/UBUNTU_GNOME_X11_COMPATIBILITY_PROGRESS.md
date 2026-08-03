@@ -142,7 +142,7 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 
 ### 4.3 普通窗口比例和运行时缩放异常
 
-状态：**代码已修复并通过编译，待本机桌面复测**
+状态：**第一版修复仍可复现；已根据截图追加修复，待本机桌面复测**
 
 本机现象：普通窗口默认没有按素材比例完整显示；拖动窗口边缘改变尺寸后，画面损坏且恢复原尺寸也不能恢复。
 
@@ -160,6 +160,13 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 - framebuffer 宽或高为零时保留上一个有效 viewport、等待恢复事件并跳过绘制，避免污染 UV 状态。
 - 同步更新窗口 viewport 的物理尺寸和逻辑尺寸。
 - X11 根窗口输出仍在绘制之后复制图像，未改变其输出时序。
+
+第一次桌面复测仍能复现：窗口右侧出现重复的竖条，底部出现重复横条，恢复尺寸后仍然存在。截图证明异常位于最终默认 framebuffer/back buffer，而不是 Scene 内部图层或鼠标视差。
+
+追加修复：
+
+- 不再把 framebuffer-size callback 的缓存值作为权威尺寸。GNOME Mutter 连续调整窗口时可能合并 `ConfigureNotify`，缓存可能停留在中间尺寸；现在每帧处理事件后通过 `glfwGetFramebufferSize()` 直接查询当前 GLX drawable。
+- 在最终合成前显式绑定默认 framebuffer，禁用 scissor，恢复 RGBA 和深度写入，设置覆盖完整 framebuffer 的 viewport，然后清理颜色和深度缓冲，避免新扩展区域保留旧 back buffer 或 effect pass 状态。
 
 验证：完整构建和链接成功。自动化环境没有可用的 Xvfb，仍需在真实 GNOME X11 会话中反复调整、最小化和恢复窗口验证视觉结果。
 

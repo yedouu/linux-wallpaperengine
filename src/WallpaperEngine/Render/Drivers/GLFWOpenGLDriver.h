@@ -36,13 +36,10 @@ public:
     GLFWwindow* getWindow () const;
 
 private:
-    static void framebufferSizeCallback (GLFWwindow* window, int width, int height);
-
     ApplicationContext& m_context;
     Input::Drivers::GLFWMouseInput m_mouseInput;
     Output::Output* m_output = nullptr;
     GLFWwindow* m_window = nullptr;
-    glm::ivec2 m_framebufferSize = { 0, 0 };
     uint32_t m_frameCounter = 0;
 };
 } // namespace WallpaperEngine::Render::Drivers
