@@ -41,14 +41,36 @@ Install the required dependencies on Ubuntu/Debian-based systems:
 ### Ubuntu 22.04
 ```bash
 sudo apt-get update
-sudo apt-get install build-essential cmake libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev libglew-dev freeglut3-dev libsdl2-dev liblz4-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libxxf86vm-dev libglm-dev libglfw3-dev libmpv-dev mpv libmpv1 libpulse-dev libpulse0 libfftw3-dev libfreetype-dev
+sudo apt-get install build-essential cmake libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev libglew-dev freeglut3-dev libsdl2-dev liblz4-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libxxf86vm-dev libglm-dev libglfw3-dev libmpv-dev mpv libmpv1 libpulse-dev libpulse0 libfftw3-dev libfreetype-dev libdbus-1-dev
 ```
 
 ### Ubuntu 24.04
 ```bash
 sudo apt-get update
-sudo apt-get install build-essential cmake libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev libglew-dev freeglut3-dev libsdl2-dev liblz4-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libxxf86vm-dev libglm-dev libglfw3-dev libmpv-dev mpv libmpv2 libpulse-dev libpulse0 libfftw3-dev libfreetype-dev
+sudo apt-get install build-essential cmake libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev libglew-dev freeglut3-dev libsdl2-dev liblz4-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libxxf86vm-dev libglm-dev libglfw3-dev libmpv-dev mpv libmpv2 libpulse-dev libpulse0 libfftw3-dev libfreetype-dev libdbus-1-dev
 ```
+
+### Verified Ubuntu 22.04 environment
+
+This fork is built and checked on the following machine:
+
+| Component | Version / configuration |
+| --- | --- |
+| OS | Ubuntu 22.04.5 LTS (Jammy Jellyfish) |
+| Kernel | Linux 6.8.0-136-generic, x86_64 |
+| Desktop | GNOME Shell 42.9 on X11 |
+| CPU | 13th Gen Intel Core i7-13700 |
+| Graphics | Intel integrated graphics (`8086:a780`) and NVIDIA discrete graphics (`10de:2582`) |
+| Compiler | GCC/G++ 11.4.0 |
+| CMake | 3.22.1 |
+| Build type | Release |
+
+The complete build, command-line help, and dynamic-library resolution have been verified in this environment. GCC 11
+does not provide a usable `<format>` implementation, so this fork keeps the CSS short-color expansion compatible with
+the Ubuntu 22.04 standard library. It also includes the standard headers used directly by the media source interfaces.
+
+On GNOME with X11, window preview mode works, but `--screen-root` is covered by GNOME Shell's own background layer. Use
+`--window` for testing until a GNOME/X11 desktop-window integration is implemented.
 
 ### Alt linux
 ```bash

@@ -2,6 +2,7 @@
 
 #include "MediaSource.h"
 #include <dbus/dbus.h>
+#include <optional>
 
 namespace WallpaperEngine::Media {
 class DBusMediaSource : public MediaSource {

@@ -2,7 +2,6 @@
 #include "VectorBuilder.h"
 
 #include <algorithm>
-#include <format>
 #include <glm/vec3.hpp>
 
 const WallpaperEngine::Data::Model::Color WallpaperEngine::Data::Builders::ColorBuilder::White
@@ -27,15 +26,18 @@ WallpaperEngine::Data::Builders::ColorBuilder::parse (const std::string& value, 
 	// expand short css notation into the right one
 	// support for css notation
 	if (number.size () == 3) {
-	    number = std::format (
-		"{}{}{}{}{}{}{:02x}", number.at (0), number.at (0), number.at (1), number.at (1), number.at (2),
-		number.at (2), static_cast<int> (alpha * 255)
-	    );
+	    constexpr char HexDigits[] = "0123456789abcdef";
+	    const auto alphaByte = static_cast<unsigned int> (std::clamp (alpha, 0.0f, 1.0f) * 255.0f);
+	    const std::string alphaHex { HexDigits[(alphaByte >> 4) & 0x0f], HexDigits[alphaByte & 0x0f] };
+	    number = std::string {
+			 number.at (0), number.at (0), number.at (1), number.at (1), number.at (2), number.at (2)
+		     }
+		+ alphaHex;
 	} else if (number.size () == 4) {
-	    number = std::format (
-		"{}{}{}{}{}{}{}{}", number.at (0), number.at (0), number.at (1), number.at (1), number.at (2),
-		number.at (2), number.at (3), number.at (3)
-	    );
+	    number = std::string {
+		number.at (0), number.at (0), number.at (1), number.at (1),
+		number.at (2), number.at (2), number.at (3), number.at (3)
+	    };
 	} else if (number.size () != 6 && number.size () != 8) {
 	    sLog.exception ("Invalid CSS color notation for ", value);
 	}
