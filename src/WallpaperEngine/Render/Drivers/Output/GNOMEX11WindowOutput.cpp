@@ -6,6 +6,7 @@
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrandr.h>
 #include <X11/Xutil.h>
+#include <X11/extensions/Xfixes.h>
 
 #define GLFW_EXPOSE_NATIVE_X11
 #include <GLFW/glfw3native.h>
@@ -165,6 +166,10 @@ void GNOMEX11WindowOutput::configureDesktopWindow () {
 		// ---- Push window below normal windows ------------------------------
 		XLowerWindow (this->m_display, this->m_x11Window);
 		XFlush (this->m_display);
+
+		// XFixes: empty input region so clicks pass through to desktop.
+		XFixesSetWindowShapeRegion (this->m_display, this->m_x11Window,
+		                          2, 0, 0, 0);
 
 	sLog.out ("GNOME X11 desktop window configured successfully");
 }
