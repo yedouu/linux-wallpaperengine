@@ -938,10 +938,6 @@ static void crashHandler (int) {
 		g_inProtectedRender = false;
 		siglongjmp (g_renderJumpBuf, 1);
 	}
-	std::signal (SIGABRT, SIG_DFL);
-	std::signal (SIGBUS, SIG_DFL);
-	std::signal (SIGSEGV, SIG_DFL);
-	raise (SIGSEGV);
 	std::signal (SIGSEGV, SIG_DFL);
 	raise (SIGSEGV);
 }
@@ -997,8 +993,6 @@ void WallpaperApplication::render () {
 	m_videoDriver->getInputContext ().update ();
 	// process driver events
 	std::signal (SIGSEGV, crashHandler);
-	std::signal (SIGABRT, crashHandler);
-	std::signal (SIGBUS, crashHandler);
 	if (sigsetjmp (g_renderJumpBuf, 1) == 0) {
 		g_inProtectedRender = true;
 		m_videoDriver->dispatchEventQueue ();
