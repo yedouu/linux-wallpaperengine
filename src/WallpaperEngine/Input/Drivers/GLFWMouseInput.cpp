@@ -1,7 +1,10 @@
+#include <X11/Xlib.h>
 #include "GLFWMouseInput.h"
 #include <glm/common.hpp>
 
 #include "WallpaperEngine/Render/Drivers/GLFWOpenGLDriver.h"
+#define GLFW_EXPOSE_NATIVE_X11
+#include <GLFW/glfw3native.h>
 
 using namespace WallpaperEngine::Input::Drivers;
 
@@ -20,7 +23,26 @@ void GLFWMouseInput::update () {
     this->m_rightClick = rightClickState == GLFW_RELEASE ? MouseClickStatus::Released : MouseClickStatus::Clicked;
 
     // update current mouse position
-    glfwGetCursorPos (this->m_driver.getWindow (), &this->m_mousePosition.x, &this->m_mousePosition.y);
+	// GNOME_X11 desktop: empty input shape → GLFW cursor stale.
+	// Use XQueryPointer to get global cursor position instead.
+	if (this->m_driver.getApp ().getContext ().settings.render.mode
+		== WallpaperEngine::Application::ApplicationContext::GNOME_X11_DESKTOP_WINDOW) {
+		GLFWwindow* glfwWin = this->m_driver.getWindow ();
+		Window x11Win = glfwGetX11Window (glfwWin);
+		if (x11Win != None) {
+			Display* dpy = glfwGetX11Display ();
+			Window root, child;
+			int rootX, rootY, winX, winY;
+			unsigned int mask;
+			if (XQueryPointer (dpy, x11Win, &root, &child,
+						&rootX, &rootY, &winX, &winY, &mask)) {
+				this->m_mousePosition.x = winX;
+				this->m_mousePosition.y = winY;
+			}
+		}
+	} else {
+		glfwGetCursorPos (this->m_driver.getWindow (), &this->m_mousePosition.x, &this->m_mousePosition.y);
+	}
 
     // Convert from GLFW coordinate system (Y=0 at top) to OpenGL coordinate system (Y=0 at bottom)
     const glm::ivec2 framebufferSize = this->m_driver.getFramebufferSize ();
