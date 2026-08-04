@@ -134,8 +134,9 @@ void GNOMEX11WindowOutput::configureDesktopWindow () {
 
 	sLog.out ("GNOME X11 desktop window: ", minX, "x", minY, " ", winW, "x", winH);
 
-	glfwSetWindowPos  (glfwWindow, minX, minY);
-	glfwSetWindowSize (glfwWindow, winW, winH);
+	// Resize with Xlib directly so the size takes effect even when the
+	// GLFW window was created small and hidden.
+	XMoveResizeWindow (this->m_display, x11Window, minX, minY, winW, winH);
 
 	// ---- Push window below normal windows ------------------------------
 	XLowerWindow (this->m_display, x11Window);
