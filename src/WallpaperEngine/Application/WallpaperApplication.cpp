@@ -29,8 +29,6 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 #include <thread>
-#include <csignal>
-#include <csetjmp>
 
 #define FULLSCREEN_CHECK_WAIT_TIME 250
 
@@ -930,18 +928,6 @@ void WallpaperApplication::setup () {
 #endif /* DEMOMODE */
 }
 
-static sigjmp_buf g_renderJumpBuf;
-static bool g_inProtectedRender = false;
-
-static void crashHandler (int) {
-	if (g_inProtectedRender) {
-		g_inProtectedRender = false;
-		siglongjmp (g_renderJumpBuf, 1);
-	}
-	std::signal (SIGSEGV, SIG_DFL);
-	raise (SIGSEGV);
-}
-
 void WallpaperApplication::render () {
     static time_t seconds;
     static struct tm* timeinfo;
@@ -992,15 +978,7 @@ void WallpaperApplication::render () {
 	// update input information
 	m_videoDriver->getInputContext ().update ();
 	// process driver events
-	std::signal (SIGSEGV, crashHandler);
-	if (sigsetjmp (g_renderJumpBuf, 1) == 0) {
-		g_inProtectedRender = true;
-		m_videoDriver->dispatchEventQueue ();
-	} else {
-		sLog.error ("SIGSEGV during render, skipping to next wallpaper");
-		this->updatePlaylists ();
-	}
-	g_inProtectedRender = false;
+	m_videoDriver->dispatchEventQueue ();
 
 	if (m_videoDriver->closeRequested ()) {
 	    sLog.out ("Stop requested by driver");
