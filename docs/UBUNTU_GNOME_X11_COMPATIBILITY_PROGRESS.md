@@ -1,6 +1,6 @@
 # Ubuntu 22.04 + GNOME X11 兼容性进度
 
-最后更新：2026-08-04 (cycle 验证通过)
+最后更新：2026-08-04
 
 ## 1. 目标
 
@@ -555,7 +555,21 @@ RRCrtcChangeNotify
 
 最后再实现 Workshop 扫描、预览、显示器映射、FPS、音量和属性配置。GUI 只负责结构化配置和控制服务，不承载渲染生命周期。对尚未解决的 Web/CEF 支持给出明确状态，不阻塞 Scene 和 Video 桌面模式发布。
 
-## 9. 下一步建议
+## 9. 当前功能状态
+
+| 功能 | 状态 | 说明 |
+|------|:---:|------|
+| GNOME X11 桌面窗口 | ✅ | 全屏、置底、不抢焦点、Alt+Tab不出现在列表 |
+| Win+D 不消失 | ✅ | `_NET_WM_WINDOW_TYPE_DESKTOP` |
+| 点击穿透 | ✅ | XShape 空输入区域，桌面右键正常 |
+| 循环播放 | ✅ | `--cycle` + `--cycle-interval`，自动扫描 Workshop |
+| 崩溃黑名单 | ✅ | 记录到 `/tmp/lwe-failed`，重启自动跳过 |
+| 全屏暂停 | ⚠️ | `--no-fullscreen-pause` 避免把自己判为全屏 |
+| Alt+Tab 露原壁纸 | ⚠️ | GNOME compositor 限制，需 Shell Extension |
+| 视差效果 | ⚠️ | `XQueryPointer` 已就绪，需有 parallax 的壁纸验证 |
+| 托盘控制面板 | 🔴 | 线程安全问题暂停，后续重新设计 |
+
+## 10. 下一步建议
 
 Scene、Video、窗口比例、运行时 resize、受控退出和预览窗口全屏误暂停已经完成本机验证；Web/CEF 初始化仍有问题，但用户使用频率低，不作为 GNOME X11 桌面模式的前置条件。长时间资源占用和更多全屏组合测试暂后置。
 
