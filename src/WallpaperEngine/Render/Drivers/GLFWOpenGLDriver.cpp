@@ -2,8 +2,8 @@
 #include "VideoFactories.h"
 #include "WallpaperEngine/Logging/Log.h"
 #include "WallpaperEngine/Render/Drivers/Output/GLFWWindowOutput.h"
-#ifdef ENABLE_X11
 #include "WallpaperEngine/Render/Drivers/Output/GNOMEX11WindowOutput.h"
+#ifdef ENABLE_X11
 #include "WallpaperEngine/Render/Drivers/Output/X11Output.h"
 #endif
 
@@ -74,12 +74,17 @@ GLFWOpenGLDriver::GLFWOpenGLDriver (const char* windowTitle, ApplicationContext&
 
     // setup output
     if (context.settings.render.mode == ApplicationContext::EXPLICIT_WINDOW
-	|| context.settings.render.mode == ApplicationContext::NORMAL_WINDOW
-	|| context.settings.render.mode == ApplicationContext::GNOME_X11_DESKTOP_WINDOW) {
+	|| context.settings.render.mode == ApplicationContext::NORMAL_WINDOW) {
 	m_output = new WallpaperEngine::Render::Drivers::Output::GLFWWindowOutput (context, *this);
     }
+    else if (context.settings.render.mode == ApplicationContext::GNOME_X11_DESKTOP_WINDOW) {
+	auto* gnomeOut = new WallpaperEngine::Render::Drivers::Output::GNOMEX11WindowOutput (context, *this);
+	m_output = gnomeOut;
+	// Apply EWMH desktop properties now that the GLFW window exists.
+	gnomeOut->configureDesktopWindow ();
+    }
 #ifdef ENABLE_X11
-    else {
+    else if (context.settings.render.mode == ApplicationContext::DESKTOP_BACKGROUND) {
 	m_output = new WallpaperEngine::Render::Drivers::Output::X11Output (context, *this);
     }
 #else

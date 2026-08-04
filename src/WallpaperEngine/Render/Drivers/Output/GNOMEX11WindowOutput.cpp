@@ -20,8 +20,7 @@ using namespace WallpaperEngine::Render::Drivers::Output;
 
 GNOMEX11WindowOutput::GNOMEX11WindowOutput (ApplicationContext& context, VideoDriver& driver) :
 	Output (context, driver) {
-	// Open X11 display so we can inspect the screen layout before the
-	// window is positioned.
+	// Open X11 display so we can inspect the screen layout.
 	this->m_display = XOpenDisplay (nullptr);
 
 	if (this->m_display == nullptr) {
