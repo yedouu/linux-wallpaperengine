@@ -523,7 +523,7 @@ void ApplicationContext::loadSettingsFromArgv () {
 		.help ("Seconds between wallpaper changes (default 60)")
 		.default_value (60)
 		.action ([this] (const std::string& value) {
-		    this->settings.general.cycleInterval = std::max (10, std::stoi (value));
+		    this->settings.general.cycleInterval = std::max (5, std::stoi (value));
 		});
 	    cycleGroup.add_argument ("--cycle-order")
 		.help ("Play order: random or sequential")
