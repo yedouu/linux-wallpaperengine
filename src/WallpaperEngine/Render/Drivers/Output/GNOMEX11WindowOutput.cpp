@@ -226,57 +226,61 @@ void GNOMEX11WindowOutput::discoverOutputs () {
 		return;
 	}
 
-	for (int i = 0; i < screenRes->noutput; i++) {
-		XRROutputInfo* info = XRRGetOutputInfo (this->m_display, screenRes, screenRes->outputs[i]);
-		if (info == nullptr || info->connection != RR_Connected) {
-			if (info) XRRFreeOutputInfo (info);
-			continue;
-		}
+		// Compute bounding box of all active XRandR outputs and create
+		// a single "default" viewport covering the entire desktop.
+		int bbMinX = 0, bbMinY = 0, bbMaxX = 0, bbMaxY = 0;
+		bool anyOutput = false;
 
-		XRRCrtcInfo* crtc = XRRGetCrtcInfo (this->m_display, screenRes, info->crtc);
-		if (crtc == nullptr) {
+		for (int i = 0; i < screenRes->noutput; i++) {
+			XRROutputInfo* info = XRRGetOutputInfo (this->m_display, screenRes, screenRes->outputs[i]);
+			if (info == nullptr || info->connection != RR_Connected) {
+				if (info) XRRFreeOutputInfo (info);
+				continue;
+			}
+
+			XRRCrtcInfo* crtc = XRRGetCrtcInfo (this->m_display, screenRes, info->crtc);
+			if (crtc == nullptr) {
+				XRRFreeOutputInfo (info);
+				continue;
+			}
+
+			sLog.out ("GNOME X11: output ", info->name, " at ", crtc->x, "x", crtc->y,
+			          " ", crtc->width, "x", crtc->height);
+
+			if (!anyOutput) {
+				bbMinX = crtc->x; bbMinY = crtc->y;
+				bbMaxX = crtc->x + crtc->width;
+				bbMaxY = crtc->y + crtc->height;
+				anyOutput = true;
+			} else {
+				if (crtc->x < bbMinX) bbMinX = crtc->x;
+				if (crtc->y < bbMinY) bbMinY = crtc->y;
+				if ((int) (crtc->x + crtc->width)  > bbMaxX) bbMaxX = (int) (crtc->x + crtc->width);
+				if ((int) (crtc->y + crtc->height) > bbMaxY) bbMaxY = (int) (crtc->y + crtc->height);
+			}
+
+			XRRFreeCrtcInfo (crtc);
 			XRRFreeOutputInfo (info);
-			continue;
 		}
 
-		const std::string name (info->name);
+		XRRFreeScreenResources (screenRes);
 
-		// Only create viewports for screens the user asked for, or fall
-		// back to every active output if none was explicitly configured.
-		bool useThisOutput = this->m_context.settings.general.screenBackgrounds.empty ()
-			|| this->m_context.settings.general.screenBackgrounds.find (name)
-				!= this->m_context.settings.general.screenBackgrounds.end ();
-
-		if (useThisOutput) {
-			sLog.out ("GNOME X11: using output ", name, " at ", crtc->x, "x", crtc->y,
-				  " ", crtc->width, "x", crtc->height);
-
-			auto* vp = new GLFWOutputViewport {
-				{crtc->x, crtc->y, crtc->width, crtc->height}, name
-			};
-			vp->globalPosition = {crtc->x, crtc->y};
-			vp->logicalSize    = {crtc->width, crtc->height};
-			this->m_screens.push_back (vp);
-			this->m_viewports[name] = vp;
+		if (!anyOutput) {
+			sLog.error ("No active XRandR outputs, falling back to 1920x1080");
+			bbMinX = 0; bbMinY = 0; bbMaxX = 1920; bbMaxY = 1080;
 		}
 
-		XRRFreeCrtcInfo (crtc);
-		XRRFreeOutputInfo (info);
-	}
+		int winW = bbMaxX - bbMinX;
+		int winH = bbMaxY - bbMinY;
 
-	XRRFreeScreenResources (screenRes);
-
-	// If we didn't find any outputs, use a fallback.
-	if (this->m_viewports.empty ()) {
-		sLog.error ("No active XRandR outputs found, using fallback geometry");
-		this->m_fullWidth  = 1920;
-		this->m_fullHeight = 1080;
-		auto* vp = new GLFWOutputViewport {{0, 0, 1920, 1080}, "default"};
-		vp->globalPosition = {0, 0};
-		vp->logicalSize    = {1920, 1080};
+		auto* vp = new GLFWOutputViewport {{bbMinX, bbMinY, winW, winH}, "default"};
+		vp->globalPosition = {bbMinX, bbMinY};
+		vp->logicalSize    = {winW, winH};
 		this->m_screens.push_back (vp);
 		this->m_viewports["default"] = vp;
-	}
+
+		sLog.out ("GNOME X11 desktop bounding box: ", bbMinX, "x", bbMinY,
+		          " ", winW, "x", winH);
 }
 
 void GNOMEX11WindowOutput::freeX11Resources () {
