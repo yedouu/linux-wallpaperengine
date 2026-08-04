@@ -1067,6 +1067,14 @@ void WallpaperApplication::show () {
 	std::signal (SIGSEGV, crashRecorder);
 	std::signal (SIGABRT, crashRecorder);
     setup ();
+    this->m_controlServer = std::make_unique<WallpaperEngine::Application::ControlServer> (
+        "/tmp/lwe-control.sock",
+        [this](const std::string& cmd, const std::string& payload) {
+            if (cmd == "next") this->nextWallpaper ();
+            else if (cmd == "prev") this->prevWallpaper ();
+            else if (cmd == "cycle") this->setCycleEnabled (payload == "1");
+            else if (cmd == "set" && !payload.empty ()) this->setWallpaper (payload);
+        });
     while (this->m_context.state.general.keepRunning) {
 	render ();
     }
