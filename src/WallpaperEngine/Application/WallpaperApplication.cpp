@@ -29,12 +29,27 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 #include <thread>
+#include <csignal>
+#include <fstream>
+#include <set>
 
 #define FULLSCREEN_CHECK_WAIT_TIME 250
 
 float g_Time;
 float g_TimeLast;
 float g_Daytime;
+
+// Crash blacklist: write current wallpaper ID before dying.
+static std::string g_currentWallpaperPath;
+static void crashRecorder (int) {
+	if (!g_currentWallpaperPath.empty ()) {
+		std::ofstream f ("/tmp/lwe-failed", std::ios::app);
+		f << g_currentWallpaperPath << std::endl;
+	}
+	std::signal (SIGSEGV, SIG_DFL);
+	std::signal (SIGABRT, SIG_DFL);
+	raise (SIGSEGV);
+}
 
 using namespace WallpaperEngine::Assets;
 using namespace WallpaperEngine::Application;
@@ -1048,6 +1063,8 @@ void WallpaperApplication::cleanup () {
 }
 
 void WallpaperApplication::show () {
+	std::signal (SIGSEGV, crashRecorder);
+	std::signal (SIGABRT, crashRecorder);
     setup ();
     while (this->m_context.state.general.keepRunning) {
 	render ();
