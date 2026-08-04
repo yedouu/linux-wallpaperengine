@@ -703,7 +703,8 @@ void ApplicationContext::loadSettingsFromArgv () {
     try {
 	program.parse_known_args (this->m_argc, this->m_argv);
 
-	if (this->settings.general.defaultBackground.empty ()) {
+	if (this->settings.general.defaultBackground.empty ()
+	    && !this->settings.general.cycleWallpapers) {
 	    throw std::runtime_error ("At least one background ID must be specified");
 	}
 
