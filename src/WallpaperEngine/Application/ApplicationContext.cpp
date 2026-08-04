@@ -511,6 +511,26 @@ void ApplicationContext::loadSettingsFromArgv () {
 	    }
 	});
 
+
+	    auto& cycleGroup = program.add_group ("Cycle options");
+	    cycleGroup.add_argument ("--cycle")
+		.help ("Auto-cycle through wallpapers found in Steam Workshop")
+		.flag ()
+		.action ([this] (const std::string&) {
+		    this->settings.general.cycleWallpapers = true;
+		});
+	    cycleGroup.add_argument ("--cycle-interval")
+		.help ("Seconds between wallpaper changes (default 60)")
+		.default_value (60)
+		.action ([this] (const std::string& value) {
+		    this->settings.general.cycleInterval = std::max (10, std::stoi (value));
+		});
+	    cycleGroup.add_argument ("--cycle-order")
+		.help ("Play order: random or sequential")
+		.default_value (std::string ("random"))		.action ([this] (const std::string& value) {
+		    this->settings.general.cycleOrder = value;
+		});
+
     auto& performanceGroup = program.add_group ("Performance options");
 
     performanceGroup.add_argument ("-f", "--fps")

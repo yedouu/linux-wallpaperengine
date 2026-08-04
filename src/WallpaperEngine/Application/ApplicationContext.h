@@ -105,6 +105,12 @@ public:
 	    std::optional<PlaylistDefinition> defaultPlaylist;
 	    /** Span groups: multiple monitors sharing one stretched wallpaper */
 	    std::vector<SpanGroup> spanGroups;
+			/** Auto-cycle through workshop wallpapers (--cycle) */
+			bool cycleWallpapers = false;
+			/** Cycle interval in seconds (--cycle-interval) */
+			int cycleInterval = 60;
+			/** Cycle order: random or sequential */
+			std::string cycleOrder = "random";
 	} general;
 
 	/**

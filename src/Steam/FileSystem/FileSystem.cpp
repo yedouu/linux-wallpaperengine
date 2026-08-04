@@ -1,4 +1,6 @@
 #include "FileSystem.h"
+#include "WallpaperEngine/Data/JSON.h"
+#include <fstream>
 #include "WallpaperEngine/Logging/Log.h"
 #include <climits>
 #include <cstdlib>
@@ -66,4 +68,42 @@ std::filesystem::path Steam::FileSystem::appDirectory (const std::string& appDir
     }
 
     sLog.exception ("Cannot find directory for steam app ", appDirectory, ": ", path);
+}
+std::vector<Steam::FileSystem::WorkshopItem> Steam::FileSystem::listWorkshopWallpapers (int appID) {
+    std::vector<WorkshopItem> result;
+    auto homepath = detectHomepath ();
+
+    for (const auto& current : workshopDirectoryPaths) {
+	auto workshopRoot = std::filesystem::path (homepath) / current / std::to_string (appID);
+
+	if (!std::filesystem::exists (workshopRoot) || !std::filesystem::is_directory (workshopRoot)) {
+	    continue;
+	}
+
+	for (const auto& entry : std::filesystem::directory_iterator (workshopRoot)) {
+	    if (!entry.is_directory ()) continue;
+
+	    const auto projectJson = entry.path () / "project.json";
+	    if (!std::filesystem::exists (projectJson)) continue;
+
+	    try {
+		std::ifstream ifs (projectJson);
+		auto json = WallpaperEngine::Data::JSON::JSON::parse (ifs);
+
+		WorkshopItem item;
+		item.id   = entry.path ().filename ().string ();
+		item.path = entry.path ();
+		item.type = json.optional<std::string> ("type", "scene");
+		item.title = json.optional<std::string> ("title", item.id);
+
+		result.push_back (std::move (item));
+	    } catch (const std::exception& e) {
+		sLog.error ("Skipping ", entry.path ().string (), ": ", e.what ());
+	    }
+	}
+
+	if (!result.empty ()) break;
+    }
+
+    return result;
 }

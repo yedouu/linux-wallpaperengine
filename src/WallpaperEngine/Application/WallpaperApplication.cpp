@@ -271,6 +271,62 @@ WallpaperApplication::buildPlaylistOrder (const ApplicationContext::PlaylistDefi
 }
 
 void WallpaperApplication::initializePlaylists () {
+    // Auto-cycle mode (--cycle): scan Workshop and build a playlist.
+    if (this->m_context.settings.general.cycleWallpapers) {
+	const auto items = Steam::FileSystem::listWorkshopWallpapers (431960);
+
+	if (items.empty ()) {
+	    sLog.error ("--cycle: no wallpapers found in Steam Workshop");
+	} else {
+	    ApplicationContext::PlaylistDefinition cycleDef;
+	    cycleDef.name = "auto-cycle";
+	    cycleDef.settings.mode = "timer";
+	    cycleDef.settings.order = this->m_context.settings.general.cycleOrder;
+	    cycleDef.settings.delayMinutes = std::max<uint32_t> (
+		1, static_cast<uint32_t> (this->m_context.settings.general.cycleInterval) / 60
+	    );
+
+	    for (const auto& item : items) {
+		cycleDef.items.push_back (item.path);
+	    }
+
+	    sLog.out ("--cycle: found ", items.size (), " wallpapers, switching every ",
+		      this->m_context.settings.general.cycleInterval, "s (", cycleDef.settings.order, ")");
+
+	    // Determine which screen key to use
+	    std::string screenKey = "default";
+	    if (!this->m_context.settings.general.screenBackgrounds.empty ()) {
+		screenKey = this->m_context.settings.general.screenBackgrounds.begin ()->first;
+	    }
+
+	    const auto now = std::chrono::steady_clock::now ();
+	    ActivePlaylist state;
+	    state.definition = cycleDef;
+	    state.order = this->buildPlaylistOrder (cycleDef);
+
+	    if (!state.order.empty ()) {
+		// Set current background from playlist if none specified
+		if (this->m_context.settings.general.screenBackgrounds.find (screenKey)
+		    == this->m_context.settings.general.screenBackgrounds.end ()
+		    || this->m_context.settings.general.screenBackgrounds[screenKey].empty ()) {
+		    const auto firstItem = cycleDef.items[state.order[0]];
+		    this->m_context.settings.general.screenBackgrounds[screenKey] = firstItem;
+		    if (this->m_context.settings.general.defaultBackground.empty ()) {
+			this->m_context.settings.general.defaultBackground = firstItem;
+		    }
+		}
+
+		state.nextSwitch = now + std::chrono::seconds (this->m_context.settings.general.cycleInterval);
+		state.lastUpdate = now;
+		this->m_activePlaylists.insert_or_assign (screenKey, std::move (state));
+	    }
+	}
+
+	// Fall through — cycle playlist handler above replaces need for the
+	// default/screen playlist logic below, but we still let config-based
+	// playlists load if both --cycle and --playlist were given.
+    }
+
     const bool hasDefaultPlaylist = this->m_context.settings.general.defaultPlaylist.has_value ();
     const bool hasScreenPlaylists = !this->m_context.settings.general.screenPlaylists.empty ();
 
@@ -484,8 +540,13 @@ void WallpaperApplication::advancePlaylist (
 	sLog.error ("Failed to load wallpaper for ", screen, ", will retry on next cycle");
     }
 
-    const uint32_t delayMinutes = std::max<uint32_t> (1, playlist.definition.settings.delayMinutes);
-    playlist.nextSwitch = now + std::chrono::minutes (delayMinutes);
+    if (this->m_context.settings.general.cycleWallpapers) {
+	playlist.nextSwitch = now + std::chrono::seconds (
+	    this->m_context.settings.general.cycleInterval);
+    } else {
+	const uint32_t delayMinutes = std::max<uint32_t> (1, playlist.definition.settings.delayMinutes);
+	playlist.nextSwitch = now + std::chrono::minutes (delayMinutes);
+    }
 }
 
 void WallpaperApplication::updatePlaylists () {
