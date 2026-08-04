@@ -137,6 +137,18 @@ void GNOMEX11WindowOutput::configureDesktopWindow () {
 	// GLFW window was created small and hidden.
 	XMoveResizeWindow (this->m_display, x11Window, minX, minY, winW, winH);
 
+		XSizeHints sizeHints;
+		sizeHints.flags      = PPosition | PSize | PMinSize | PMaxSize;
+		sizeHints.x          = minX;
+		sizeHints.y          = minY;
+		sizeHints.width      = winW;
+		sizeHints.height     = winH;
+		sizeHints.min_width  = winW;
+		sizeHints.max_width  = winW;
+		sizeHints.min_height = winH;
+		sizeHints.max_height = winH;
+		XSetWMNormalHints (this->m_display, x11Window, &sizeHints);
+
 	// ---- Push window below normal windows ------------------------------
 	XLowerWindow (this->m_display, x11Window);
 	XFlush (this->m_display);
