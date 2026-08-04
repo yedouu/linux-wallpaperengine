@@ -195,6 +195,15 @@ void GNOMEX11WindowOutput::setupEWMHProperties (Window x11Window) {
 		reinterpret_cast<unsigned char*> (&desktopAll), 1
 	);
 
+
+		// _NET_WM_WINDOW_TYPE_DESKTOP — tells Mutter this is a desktop window
+		// that must survive Show Desktop (Win+D) and stay below normal apps.
+		Atom net_wm_window_type       = XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE",        False);
+		Atom net_wm_window_type_desktop = XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE_DESKTOP", False);
+		XChangeProperty (this->m_display, x11Window,
+		                net_wm_window_type, XA_ATOM, 32,
+		                PropModeReplace,
+		                reinterpret_cast<unsigned char*> (&net_wm_window_type_desktop), 1);
 	sLog.out ("EWMH desktop properties applied to window 0x", std::hex, x11Window);
 }
 
