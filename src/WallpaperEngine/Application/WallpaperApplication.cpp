@@ -23,7 +23,6 @@
 #endif /* DEMOMODE */
 
 #include <algorithm>
-#include <set>
 #include <climits>
 #include <numeric>
 #include <unistd.h>
@@ -32,7 +31,6 @@
 #include <thread>
 #include <csignal>
 #include <csetjmp>
-#include <fstream>
 
 #define FULLSCREEN_CHECK_WAIT_TIME 250
 
@@ -936,14 +934,6 @@ static sigjmp_buf g_renderJumpBuf;
 static bool g_inProtectedRender = false;
 
 static void crashHandler (int) {
-	// Write crashed wallpaper to failed list before dying.
-	std::ofstream failedLog ("/tmp/lwe-failed", std::ios::app);
-	std::ifstream currentFile ("/tmp/lwe-current");
-	if (currentFile.good ()) {
-		std::string crashedPath;
-		std::getline (currentFile, crashedPath);
-		if (!crashedPath.empty ()) failedLog << crashedPath << std::endl;
-	}
 	if (g_inProtectedRender) {
 		g_inProtectedRender = false;
 		siglongjmp (g_renderJumpBuf, 1);
