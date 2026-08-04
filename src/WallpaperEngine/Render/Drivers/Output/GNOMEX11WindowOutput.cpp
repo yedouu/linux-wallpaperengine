@@ -195,14 +195,6 @@ void GNOMEX11WindowOutput::setupEWMHProperties () {
 	);
 
 
-		// _NET_WM_WINDOW_TYPE_DESKTOP — survive Show Desktop (Win+D) and
-		// stay anchored to the desktop layer during compositor transitions.
-		Atom net_wm_window_type = XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE", False);
-		Atom net_wm_window_type_desktop = XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE_DESKTOP", False);
-		XChangeProperty (this->m_display, this->m_x11Window,
-		                net_wm_window_type, XA_ATOM, 32,
-		                PropModeReplace,
-		                reinterpret_cast<unsigned char*> (&net_wm_window_type_desktop), 1);
 	// _NET_WM_DESKTOP = 0xFFFFFFFF → visible on all desktops / workspaces.
 	Atom net_wm_desktop = XInternAtom (this->m_display, "_NET_WM_DESKTOP", False);
 	long desktopAll = 0xFFFFFFFF;
