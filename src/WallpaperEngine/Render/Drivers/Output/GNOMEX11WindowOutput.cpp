@@ -133,9 +133,11 @@ void GNOMEX11WindowOutput::configureDesktopWindow () {
 
 	sLog.out ("GNOME X11 desktop window: ", minX, "x", minY, " ", winW, "x", winH);
 
-	// Resize with Xlib directly so the size takes effect even when the
-	// GLFW window was created small and hidden.
-	XMoveResizeWindow (this->m_display, x11Window, minX, minY, winW, winH);
+		// ---- Show the window first (GLFW maps with 640x480) ------------
+		glfwDriver.showWindow ();
+
+		// ---- Resize to cover the full desktop after GLFW has mapped it -
+		XMoveResizeWindow (this->m_display, x11Window, minX, minY, winW, winH);
 
 		XSizeHints sizeHints;
 		sizeHints.flags      = PPosition | PSize | PMinSize | PMaxSize;
@@ -149,12 +151,9 @@ void GNOMEX11WindowOutput::configureDesktopWindow () {
 		sizeHints.max_height = winH;
 		XSetWMNormalHints (this->m_display, x11Window, &sizeHints);
 
-	// ---- Push window below normal windows ------------------------------
-	XLowerWindow (this->m_display, x11Window);
-	XFlush (this->m_display);
-
-	// ---- Show the window (was created hidden) --------------------------
-	glfwDriver.showWindow ();
+		// ---- Push window below normal windows ------------------------------
+		XLowerWindow (this->m_display, x11Window);
+		XFlush (this->m_display);
 
 	sLog.out ("GNOME X11 desktop window configured successfully");
 }
