@@ -176,13 +176,11 @@ void GNOMEX11WindowOutput::configureDesktopWindow () {
 void GNOMEX11WindowOutput::setupEWMHProperties () {
 	// Build the _NET_WM_STATE atom list.
 	Atom net_wm_state         = XInternAtom (this->m_display, "_NET_WM_STATE",         False);
-	Atom net_wm_state_below   = XInternAtom (this->m_display, "_NET_WM_STATE_BELOW",   False);
 	Atom net_wm_state_sticky  = XInternAtom (this->m_display, "_NET_WM_STATE_STICKY",  False);
 	Atom net_wm_skip_taskbar  = XInternAtom (this->m_display, "_NET_WM_STATE_SKIP_TASKBAR", False);
 	Atom net_wm_skip_pager    = XInternAtom (this->m_display, "_NET_WM_STATE_SKIP_PAGER",   False);
 
 	Atom states[] = {
-		net_wm_state_below,
 		net_wm_state_sticky,
 		net_wm_skip_taskbar,
 		net_wm_skip_pager,
@@ -196,6 +194,15 @@ void GNOMEX11WindowOutput::setupEWMHProperties () {
 		sizeof (states) / sizeof (states[0])
 	);
 
+
+		// _NET_WM_WINDOW_TYPE_DESKTOP — survive Show Desktop (Win+D) and
+		// stay anchored to the desktop layer during compositor transitions.
+		Atom net_wm_window_type = XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE", False);
+		Atom net_wm_window_type_desktop = XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE_DESKTOP", False);
+		XChangeProperty (this->m_display, this->m_x11Window,
+		                net_wm_window_type, XA_ATOM, 32,
+		                PropModeReplace,
+		                reinterpret_cast<unsigned char*> (&net_wm_window_type_desktop), 1);
 	// _NET_WM_DESKTOP = 0xFFFFFFFF → visible on all desktops / workspaces.
 	Atom net_wm_desktop = XInternAtom (this->m_display, "_NET_WM_DESKTOP", False);
 	long desktopAll = 0xFFFFFFFF;
