@@ -21,6 +21,7 @@
 #include "WallpaperEngine/Media/MediaSource.h"
 
 #include <set>
+#include "WallpaperEngine/Application/ControlServer.h"
 
 namespace WallpaperEngine::Application {
 
@@ -141,6 +142,16 @@ private:
      */
     void takeScreenshot (const std::filesystem::path& filename) const;
 
+    // ---- Control interface (used by tray applet / socket) ----
+    /** Skip to the next wallpaper in the active playlist. */
+    void nextWallpaper ();
+    /** Go back to the previous wallpaper. */
+    void prevWallpaper ();
+    /** Enable or disable auto-cycling. */
+    void setCycleEnabled (bool enabled);
+    /** Switch to a specific wallpaper by path. */
+    void setWallpaper (const std::filesystem::path& path);
+
     struct ActivePlaylist {
 	ApplicationContext::PlaylistDefinition definition;
 	std::vector<std::size_t> order;
@@ -182,5 +193,6 @@ private:
     uint32_t m_nextFrameScreenshot = 0;
     std::chrono::steady_clock::time_point m_pauseStart {};
     GLuint m_destinationFramebuffer = 0;
+	std::unique_ptr<WallpaperEngine::Application::ControlServer> m_controlServer;
 };
 } // namespace WallpaperEngine::Application

@@ -309,6 +309,8 @@ set(COMMON_SOURCES
 
     src/WallpaperEngine/Application/ApplicationContext.cpp
     src/WallpaperEngine/Application/ApplicationContext.h
+	    src/WallpaperEngine/Application/ControlServer.cpp
+	    src/WallpaperEngine/Application/ControlServer.h
     src/WallpaperEngine/Application/WallpaperApplication.cpp
     src/WallpaperEngine/Application/WallpaperApplication.h
 
@@ -707,3 +709,11 @@ install(DIRECTORY ${TARGET_OUTPUT_DIRECTORY}/ DESTINATION .
     PATTERN "linux-wallpaperengine" EXCLUDE
     PATTERN "liblinux-wallpaperengine-lib.so" EXCLUDE
 )
+
+# ---- Tray applet ----
+pkg_check_modules(AYATANA REQUIRED ayatana-appindicator3-0.1)
+add_executable (lwe-tray
+    src/lwe-tray.cpp
+)
+target_include_directories (lwe-tray PRIVATE ${AYATANA_INCLUDE_DIRS})
+target_link_libraries (lwe-tray PRIVATE ${AYATANA_LIBRARIES})

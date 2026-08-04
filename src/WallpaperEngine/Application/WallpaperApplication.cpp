@@ -1,6 +1,7 @@
 #include "WallpaperApplication.h"
 
 #include "Steam/FileSystem/FileSystem.h"
+#include "WallpaperEngine/Application/ControlServer.h"
 #include "WallpaperEngine/Application/ApplicationState.h"
 #include "WallpaperEngine/Assets/AssetLoadException.h"
 #include "WallpaperEngine/Audio/Drivers/Detectors/PulseAudioPlayingDetector.h"
@@ -1101,3 +1102,57 @@ void WallpaperApplication::setDestinationFramebuffer (GLuint framebuffer) {
 }
 
 GLuint WallpaperApplication::getDestinationFramebuffer () const { return this->m_destinationFramebuffer; }
+void WallpaperApplication::nextWallpaper () {
+    for (auto& [screen, playlist] : m_activePlaylists) {
+	const auto now = std::chrono::steady_clock::now ();
+	this->advancePlaylist (screen, playlist, now);
+    }
+}
+
+void WallpaperApplication::prevWallpaper () {
+    for (auto& [screen, playlist] : m_activePlaylists) {
+	if (playlist.order.empty ()) continue;
+	// Go back: decrement twice and advance once
+	playlist.orderIndex = (playlist.orderIndex + playlist.order.size () - 2) % playlist.order.size ();
+	const auto now = std::chrono::steady_clock::now ();
+	this->advancePlaylist (screen, playlist, now);
+    }
+}
+
+void WallpaperApplication::setCycleEnabled (bool enabled) {
+    this->m_context.settings.general.cycleWallpapers = enabled;
+    sLog.out ("Cycle: ", enabled ? "enabled" : "disabled");
+}
+
+void WallpaperApplication::setWallpaper (const std::filesystem::path& path) {
+    for (auto& [screen, playlist] : m_activePlaylists) {
+	// Find index of this wallpaper and set orderIndex
+	for (std::size_t i = 0; i < playlist.definition.items.size (); i++) {
+	    if (playlist.definition.items[i] == path) {
+		playlist.orderIndex = (i + playlist.order.size () - 1) % playlist.order.size ();
+		const auto now = std::chrono::steady_clock::now ();
+		this->advancePlaylist (screen, playlist, now);
+		return;
+	    }
+	}
+    }
+    // No active playlist: load directly
+    sLog.out ("Loading wallpaper: ", path.string ());
+    try {
+	if (!this->makeAnyViewportCurrent ()) return;
+	auto project = this->loadBackground (path.string ());
+	this->setupPropertiesForProject (*project);
+	this->ensureBrowserForProject (*project);
+	this->m_backgrounds["default"] = std::move (project);
+	if (m_renderContext) {
+	    m_renderContext->setWallpaper ("default",
+		WallpaperEngine::Render::CWallpaper::fromWallpaper (
+		    *this->m_backgrounds["default"]->wallpaper, *m_renderContext,
+		    *m_audioContext, m_browserContext.get (),
+		    m_context.settings.render.window.scalingMode,
+		    m_context.settings.render.window.clamp));
+	}
+    } catch (const std::exception& e) {
+	sLog.error ("Failed to load wallpaper: ", e.what ());
+    }
+}
