@@ -182,7 +182,9 @@ dispatchEventQueue()  # 事件 + 渲染 + buffer 交换（暂停时跳过）
 | **步骤 2：事件循环拆分** | ✅ | `pumpEvents()` 纯虚方法，暂停时窗口保持响应 |
 | **步骤 3：GNOMEX11WindowOutput** | ✅ | EWMH DESKTOP/sticky/skip-taskbar/skip-pager, XRandR bounding box |
 | Alt+Tab 兼容性 | ⚠️ | GNOME compositor 限制：切换时短暂露原壁纸，需 Shell Extension |
-| 步骤 4：点击穿透 | 🔜 | XFixes/Shape 空输入区域 + 全局鼠标位置 |
+| 壁纸循环播放 | ✅ | `--cycle` + `--cycle-interval`，扫描 Workshop 自动轮播 |
+| 步骤 4：点击穿透 | ✅ | XShape 空输入区域，XQueryPointer 全局鼠标位置 |
+| 渲染崩溃 | ⚠️ | 不支持格式（MDLV0016等）触发 SIGSEGV，需上游容错 |
 | 步骤 5-10 | 🔜 | 多显示器、热插拔、全屏暂停优化、服务化、GUI |
 
 ## 9. 依赖关系

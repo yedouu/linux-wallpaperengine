@@ -1,6 +1,6 @@
 # Ubuntu 22.04 + GNOME X11 兼容性进度
 
-最后更新：2026-08-04
+最后更新：2026-08-04 (cycle 验证通过)
 
 ## 1. 目标
 
@@ -243,6 +243,23 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 可行修复方案：编写 GNOME Shell Extension，在 Shell 进程内部拦截切换事件，但技术代价大（JS 技术栈分离、Shell 版本耦合、额外部署步骤），当前优先推进核心桌面功能，后续再考虑用小扩展精细打磨。
 
 ## 5. 内容类型兼容性
+
+
+### 5.1 壁纸切换时的渲染崩溃
+
+状态：**已确认，待修复**
+
+现象：循环模式下，部分壁纸（包含不支持的 puppet 格式 MDLV0016、Light objects、未知对象类型）在渲染帧中触发 SIGSEGV 崩溃。
+
+根因：崩溃发生在渲染循环（RenderContext::render / CScene 着色器编译），不在 loadBackground 中。现有的 advancePlaylist try-catch 无法捕获 SIGSEGV。
+
+修复方案（按推荐顺序）：
+
+1. **上游渲染容错（推荐）**：在 `CObject`/`CPass`/着色器编译等路径中，对不支持的格式返回空占位对象而非崩溃。改动分散在 `src/WallpaperEngine/Render/` 多个文件，需要逐个类型处理。
+
+2. **SIGSEGV 信号处理器**：注册 SIGSEGV handler，用 sigsetjmp/siglongjmp 回到主循环，标记当前壁纸失败并跳过。实现约 50 行但需谨慎处理 OpenGL 状态恢复。
+
+3. **预扫描过滤**：在 `listWorkshopWallpapers()` 中解析 project.json 的 objects/effects，预判是否包含不支持特性，提前过滤。需要维护黑名单且可能误杀。
 
 ### Scene
 
