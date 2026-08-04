@@ -48,12 +48,13 @@ private:
 	void discoverOutputs ();
 
 	/** Set _NET_WM_STATE, _NET_WM_DESKTOP, WM_HINTS, etc. */
-	void setupEWMHProperties (Window x11Window);
+	void setupEWMHProperties ();
 
 	/** Release X11 resources. */
 	void freeX11Resources ();
 
 	Display* m_display = nullptr;
+	Window m_x11Window = None;
 	bool m_desktopConfigured = false;
 	/** Owning storage for viewport objects (m_viewports holds non-owning
 	 *  pointers into this vector). */

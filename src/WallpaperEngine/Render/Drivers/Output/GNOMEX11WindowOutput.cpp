@@ -69,6 +69,17 @@ void GNOMEX11WindowOutput::updateRender () const {
 	this->m_fullWidth  = glfwDriver.getFramebufferSize ().x;
 	this->m_fullHeight = glfwDriver.getFramebufferSize ().y;
 
+
+		// Recover from Show Desktop (Win+D): Mutter minimizes NORMAL-type
+		// windows, so re-map ours if it disappeared.
+		if (this->m_x11Window != None) {
+			XWindowAttributes attrs;
+			if (XGetWindowAttributes (this->m_display, this->m_x11Window, &attrs)
+				&& attrs.map_state == IsUnmapped) {
+				XMapWindow (this->m_display, this->m_x11Window);
+				XLowerWindow (this->m_display, this->m_x11Window);
+			}
+		}
 	// Re-map the default viewport to cover the current framebuffer.
 	auto vpIt = this->m_viewports.find ("default");
 	if (vpIt != this->m_viewports.end ()) {
@@ -93,19 +104,19 @@ void GNOMEX11WindowOutput::configureDesktopWindow () {
 		sLog.exception ("Cannot configure GNOME desktop window: no GLFW window");
 	}
 
-	Window x11Window = glfwGetX11Window (glfwWindow);
-	if (x11Window == None) {
+	this->m_x11Window = glfwGetX11Window (glfwWindow);
+	if (this->m_x11Window == None) {
 		sLog.exception ("Cannot configure GNOME desktop window: no X11 handle");
 	}
 
 	// ---- EWMH atoms ---------------------------------------------------
-	this->setupEWMHProperties (x11Window);
+	this->setupEWMHProperties ();
 
 	// ---- WM_HINTS: do not take keyboard focus --------------------------
 	XWMHints wmHints;
 	wmHints.flags = InputHint;
 	wmHints.input = False;
-	XSetWMHints (this->m_display, x11Window, &wmHints);
+	XSetWMHints (this->m_display, this->m_x11Window, &wmHints);
 
 	// ---- Position and size: cover the bounding box of all viewports ----
 	int minX = 0, minY = 0, maxX = 0, maxY = 0;
@@ -137,7 +148,7 @@ void GNOMEX11WindowOutput::configureDesktopWindow () {
 		glfwDriver.showWindow ();
 
 		// ---- Resize to cover the full desktop after GLFW has mapped it -
-		XMoveResizeWindow (this->m_display, x11Window, minX, minY, winW, winH);
+		XMoveResizeWindow (this->m_display, this->m_x11Window, minX, minY, winW, winH);
 
 		XSizeHints sizeHints;
 		sizeHints.flags      = PPosition | PSize | PMinSize | PMaxSize;
@@ -149,10 +160,10 @@ void GNOMEX11WindowOutput::configureDesktopWindow () {
 		sizeHints.max_width  = winW;
 		sizeHints.min_height = winH;
 		sizeHints.max_height = winH;
-		XSetWMNormalHints (this->m_display, x11Window, &sizeHints);
+		XSetWMNormalHints (this->m_display, this->m_x11Window, &sizeHints);
 
 		// ---- Push window below normal windows ------------------------------
-		XLowerWindow (this->m_display, x11Window);
+		XLowerWindow (this->m_display, this->m_x11Window);
 		XFlush (this->m_display);
 
 	sLog.out ("GNOME X11 desktop window configured successfully");
@@ -162,7 +173,7 @@ void GNOMEX11WindowOutput::configureDesktopWindow () {
 /*  Private helpers                                                           */
 /* -------------------------------------------------------------------------- */
 
-void GNOMEX11WindowOutput::setupEWMHProperties (Window x11Window) {
+void GNOMEX11WindowOutput::setupEWMHProperties () {
 	// Build the _NET_WM_STATE atom list.
 	Atom net_wm_state         = XInternAtom (this->m_display, "_NET_WM_STATE",         False);
 	Atom net_wm_state_below   = XInternAtom (this->m_display, "_NET_WM_STATE_BELOW",   False);
@@ -178,7 +189,7 @@ void GNOMEX11WindowOutput::setupEWMHProperties (Window x11Window) {
 	};
 
 	XChangeProperty (
-		this->m_display, x11Window,
+		this->m_display, this->m_x11Window,
 		net_wm_state, XA_ATOM, 32,
 		PropModeReplace,
 		reinterpret_cast<unsigned char*> (states),
@@ -189,22 +200,14 @@ void GNOMEX11WindowOutput::setupEWMHProperties (Window x11Window) {
 	Atom net_wm_desktop = XInternAtom (this->m_display, "_NET_WM_DESKTOP", False);
 	long desktopAll = 0xFFFFFFFF;
 	XChangeProperty (
-		this->m_display, x11Window,
+		this->m_display, this->m_x11Window,
 		net_wm_desktop, XA_CARDINAL, 32,
 		PropModeReplace,
 		reinterpret_cast<unsigned char*> (&desktopAll), 1
 	);
 
 
-		// _NET_WM_WINDOW_TYPE_DOCK — tells Mutter this is a desktop window
-		// that must survive Show Desktop (Win+D) and stay below normal apps.
-		Atom net_wm_window_type       = XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE",        False);
-		Atom net_wm_window_type_desktop = XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE_DOCK", False);
-		XChangeProperty (this->m_display, x11Window,
-		                net_wm_window_type, XA_ATOM, 32,
-		                PropModeReplace,
-		                reinterpret_cast<unsigned char*> (&net_wm_window_type_desktop), 1);
-	sLog.out ("EWMH desktop properties applied to window 0x", std::hex, x11Window);
+	sLog.out ("EWMH desktop properties applied to window 0x", std::hex, this->m_x11Window);
 }
 
 void GNOMEX11WindowOutput::discoverOutputs () {
