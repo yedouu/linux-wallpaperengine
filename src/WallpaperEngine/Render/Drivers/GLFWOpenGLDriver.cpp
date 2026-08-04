@@ -3,6 +3,7 @@
 #include "WallpaperEngine/Logging/Log.h"
 #include "WallpaperEngine/Render/Drivers/Output/GLFWWindowOutput.h"
 #ifdef ENABLE_X11
+#include "WallpaperEngine/Render/Drivers/Output/GNOMEX11WindowOutput.h"
 #include "WallpaperEngine/Render/Drivers/Output/X11Output.h"
 #endif
 
@@ -43,6 +44,15 @@ GLFWOpenGLDriver::GLFWOpenGLDriver (const char* windowTitle, ApplicationContext&
 	glfwWindowHint (GLFW_FLOATING, GLFW_TRUE);
     }
 
+    // GNOME X11 desktop: undecorated, non-resizable, non-floating, initially hidden
+    if (context.settings.render.mode == Application::ApplicationContext::GNOME_X11_DESKTOP_WINDOW) {
+	glfwWindowHint (GLFW_RESIZABLE, GLFW_FALSE);
+	glfwWindowHint (GLFW_DECORATED, GLFW_FALSE);
+	glfwWindowHint (GLFW_FLOATING, GLFW_FALSE);
+	glfwWindowHint (GLFW_FOCUS_ON_SHOW, GLFW_FALSE);
+	glfwWindowHint (GLFW_VISIBLE, GLFW_FALSE);
+    }
+
 #if !NDEBUG
     glfwWindowHint (GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
 #endif /* DEBUG */
@@ -64,7 +74,8 @@ GLFWOpenGLDriver::GLFWOpenGLDriver (const char* windowTitle, ApplicationContext&
 
     // setup output
     if (context.settings.render.mode == ApplicationContext::EXPLICIT_WINDOW
-	|| context.settings.render.mode == ApplicationContext::NORMAL_WINDOW) {
+	|| context.settings.render.mode == ApplicationContext::NORMAL_WINDOW
+	|| context.settings.render.mode == ApplicationContext::GNOME_X11_DESKTOP_WINDOW) {
 	m_output = new WallpaperEngine::Render::Drivers::Output::GLFWWindowOutput (context, *this);
     }
 #ifdef ENABLE_X11
@@ -107,17 +118,33 @@ glm::ivec2 GLFWOpenGLDriver::getFramebufferSize () const {
 
 uint32_t GLFWOpenGLDriver::getFrameCounter () const { return this->m_frameCounter; }
 
+void GLFWOpenGLDriver::pumpEvents () {
+	glfwPollEvents ();
+
+	// Track framebuffer dimensions for window modes so that resize events
+	// during pause update the stored viewport size before the next frame.
+	if (this->m_context.settings.render.mode == ApplicationContext::NORMAL_WINDOW
+		|| this->m_context.settings.render.mode == ApplicationContext::EXPLICIT_WINDOW
+		|| this->m_context.settings.render.mode == ApplicationContext::GNOME_X11_DESKTOP_WINDOW) {
+		const auto fbSize = this->getFramebufferSize ();
+		if (fbSize.x > 0 && fbSize.y > 0) {
+			this->m_output->updateRender ();
+		}
+	}
+}
+
 void GLFWOpenGLDriver::dispatchEventQueue () {
     static float startTime, endTime, minimumTime = 1.0f / this->m_context.settings.render.maximumFPS;
     // get the start time of the frame
     startTime = this->getRenderTime ();
 
-    // Process resize events before rendering so the viewport always matches the
-    // framebuffer used for this frame.
-    glfwPollEvents ();
+    // Process window events (delegated to pumpEvents so the same processing
+    // runs during fullscreen-pause).
+    this->pumpEvents ();
 
     if (this->m_context.settings.render.mode == ApplicationContext::NORMAL_WINDOW
-	|| this->m_context.settings.render.mode == ApplicationContext::EXPLICIT_WINDOW) {
+	|| this->m_context.settings.render.mode == ApplicationContext::EXPLICIT_WINDOW
+	|| this->m_context.settings.render.mode == ApplicationContext::GNOME_X11_DESKTOP_WINDOW) {
 	const auto framebufferSize = this->getFramebufferSize ();
 
 	// Minimized windows can temporarily have a zero-sized framebuffer. Keep the
@@ -206,6 +233,12 @@ __attribute__ ((constructor)) void registerGLFWOpenGLDriver () {
 	ApplicationContext::EXPLICIT_WINDOW, DEFAULT_WINDOW_NAME,
 	[] (ApplicationContext& context, WallpaperApplication& application) -> std::unique_ptr<VideoDriver> {
 	    return std::make_unique<GLFWOpenGLDriver> ("wallpaperengine", context, application);
+	}
+    );
+    sVideoFactories.registerDriver (
+	ApplicationContext::GNOME_X11_DESKTOP_WINDOW, "x11",
+	[] (ApplicationContext& context, WallpaperApplication& application) -> std::unique_ptr<VideoDriver> {
+	    return std::make_unique<GLFWOpenGLDriver> ("wallpaperengine-desktop", context, application);
 	}
     );
     sVideoFactories.registerDriver (

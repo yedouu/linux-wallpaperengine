@@ -193,6 +193,21 @@ void WallpaperApplication::loadBackgrounds () {
 	return;
     }
 
+    // For GNOME X11 desktop mode without explicit --screen-root, register a
+    // default screen so the wallpaper is loaded on the primary display.
+    // Uses "default" as the screen key to match GLFWWindowOutput's viewport name.
+    // Until the full desktop-window integration is done (Step 3+), use fit+border
+    // so the wallpaper renders correctly inside the small dev window.
+    if (this->m_context.settings.render.mode == ApplicationContext::GNOME_X11_DESKTOP_WINDOW
+		&& this->m_context.settings.general.screenBackgrounds.empty ()) {
+		this->m_context.settings.general.screenBackgrounds["default"]
+			= this->m_context.settings.general.defaultBackground;
+		this->m_context.settings.general.screenScalings["default"]
+			= WallpaperEngine::Render::WallpaperState::TextureUVsScaling::ZoomFitUVs;
+		this->m_context.settings.general.screenClamps["default"]
+			= TextureFlags_ClampUVsBorder;
+    }
+
     for (const auto& [screen, path] : this->m_context.settings.general.screenBackgrounds) {
 	// skip span group synthetic keys here, they're handled below
 	if (screen.rfind ("span:", 0) == 0) {
@@ -857,6 +872,16 @@ void WallpaperApplication::render () {
     static struct tm* timeinfo;
 
     if (this->m_isPaused) {
+	// Always process window events so the window stays responsive during
+	// fullscreen pause. This allows resize, move, and close requests.
+	m_videoDriver->pumpEvents ();
+
+	if (m_videoDriver->closeRequested ()) {
+	    sLog.out ("Stop requested by driver while paused");
+	    this->m_context.state.general.keepRunning = false;
+	    return;
+	}
+
 	usleep (FULLSCREEN_CHECK_WAIT_TIME);
 	if (this->m_fullScreenDetector->anythingFullscreen () && this->m_context.state.general.keepRunning) {
 	    return;

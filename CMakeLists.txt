@@ -391,7 +391,9 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Render/Drivers/Output/Output.cpp
     src/WallpaperEngine/Render/Drivers/Output/Output.h
     src/WallpaperEngine/Render/Drivers/Output/GLFWWindowOutput.cpp
-    src/WallpaperEngine/Render/Drivers/Output/GLFWWindowOutput.h
+    src/WallpaperEngine/Render/Drivers/Output/GNOMEX11WindowOutput.h
+	    src/WallpaperEngine/Render/Drivers/Output/GNOMEX11WindowOutput.cpp
+	    src/WallpaperEngine/Render/Drivers/Output/GLFWWindowOutput.h
     src/WallpaperEngine/Render/Drivers/Output/GLFWOutputViewport.cpp
     src/WallpaperEngine/Render/Drivers/Output/GLFWOutputViewport.h
     src/WallpaperEngine/Render/Drivers/Output/OutputViewport.cpp
@@ -564,7 +566,8 @@ if(BUILD_TESTING)
         src/WallpaperEngine/Testing/Harnesses/RenderHarness.cpp
         src/WallpaperEngine/Testing/Harnesses/RenderHarness.h
         src/WallpaperEngine/Testing/Cases/MouseCoordinates.cpp
-        src/WallpaperEngine/Testing/Cases/PropertyParser.cpp)
+        src/WallpaperEngine/Testing/Cases/PropertyParser.cpp
+        src/WallpaperEngine/Testing/Cases/GnomeX11Mode.cpp)
 endif()
 
 add_library(

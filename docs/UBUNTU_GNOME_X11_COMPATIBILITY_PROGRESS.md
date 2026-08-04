@@ -1,6 +1,6 @@
 # Ubuntu 22.04 + GNOME X11 兼容性进度
 
-最后更新：2026-08-03
+最后更新：2026-08-04
 
 ## 1. 目标
 
@@ -295,74 +295,241 @@ CMake 会从 CEF 分发服务器下载指定版本并使用 SHA-1 校验。首�
 
 解决方案是将必要的 X11 窗口属性操作放入 C++ 后端，并使用结构化配置及明确的进程生命周期管理，而不是继续扩展外部 Shell 桥接层。
 
-## 8. 推荐开发阶段
+## 8. GNOME X11 原生桌面窗口实施顺序
 
-### 阶段 0：本机运行基线
+### 8.1 实现原则和范围
 
-状态：**进行中；Scene 显式窗口已通过**
+目标层级：
 
-- 已在真实桌面终端运行 Scene 窗口预览，显示和受控退出正常。
-- 继续对 Video 和 Web 各选择至少一个项目。
-- 记录 OpenGL 渲染器、控制台日志、CPU/GPU/内存占用。
-- 验证音频、鼠标、暂停和退出清理。
+```text
+GNOME 原生背景 < linux-wallpaperengine 桌面窗口 < 普通应用窗口
+```
 
-### 阶段 1：GNOME X11 单显示器桌面窗口
+第一版只支持 GNOME X11，不尝试解决 GNOME Wayland。实现必须遵守以下原则：
 
-优先级：**最高**
+- 不再写入 X11 根窗口 Pixmap。
+- 不依赖 `wmctrl`、`xdotool` 或窗口标题搜索。
+- 不使用 `override_redirect` 绕过 Mutter。
+- 使用一个受 Mutter 管理的 GLFW/X11 窗口。
+- 第一版不设置 `_NET_WM_WINDOW_TYPE_DESKTOP`，避免窗口再次落到 GNOME 自己的背景层后面。
+- 单个进程负责所有显示器，不为每个显示器启动独立进程。
+- 预览模式、固定几何窗口模式和桌面窗口模式保持独立。
+- 暂停渲染不能停止 X11/GLFW 事件处理。
 
-- 新增独立桌面窗口模式。
-- 在 C++ 中设置 EWMH 窗口状态。
-- 禁止抢占焦点，隐藏任务栏和分页器入口。
-- 支持干净退出，不依赖外部进程搜索和强制终止。
+### 8.2 步骤 1：新增独立模式和命令行入口
 
-验收标准：注销/登录、切换工作区、打开 Overview、显示桌面图标和普通窗口时，壁纸层级均正确。
+新增窗口模式：
 
-### 阶段 2：多显示器、热插拔与全屏暂停
+```cpp
+GNOME_X11_DESKTOP_WINDOW
+```
 
-- 支持每屏不同壁纸和跨屏壁纸。
-- 监听 XRandR 输出变化。
-- 验证不同缩放、排列和全屏组合。
-- 验证 Intel/NVIDIA 混合显卡。
+新增参数：
 
-### 阶段 3：安全的用户服务和配置
+```text
+--gnome-x11
+```
 
-- 使用 JSON/INI 等非可执行格式保存配置。
-- 使用 systemd 用户服务或受控的 XDG autostart。
-- 通过 PID/服务管理停止实例，不使用广泛 `pkill`。
-- 提供日志、状态、重启和卸载方法。
+预计修改范围：
 
-### 阶段 4：GUI 与壁纸管理
+- `ApplicationContext.h/.cpp`：增加枚举、参数解析和互斥校验。
+- `VideoFactories.cpp`：为新模式注册 GLFW/OpenGL driver。
+- 帮助文本和 README：说明仅支持 X11；在 Wayland 会话中给出明确错误。
 
-- 扫描 Steam Workshop 目录并显示标题、预览和类型。
-- 配置显示器、缩放、FPS、音量和属性。
-- 对不支持的内容类型给出明确提示。
-- GUI 只负责配置和控制，不承载渲染生命周期。
+示例命令：
+
+```bash
+linux-wallpaperengine \
+  --assets-dir ~/.local/share/Steam/steamapps/common/wallpaper_engine/assets \
+  --gnome-x11 \
+  --fps 30 \
+  --silent \
+  2955458015
+```
+
+验收标准：新模式可以独立解析和进入专用输出路径，不改变 `NORMAL_WINDOW`、`EXPLICIT_WINDOW` 和现有 `DESKTOP_BACKGROUND` 的行为。
+
+### 8.3 步骤 2：拆分事件处理和渲染暂停 ✅
+
+状态：**已实现**
+
+已从 `dispatchEventQueue()` 中提取 `pumpEvents()` 纯虚方法到 `VideoDriver` 基类。暂停时调用 `pumpEvents()` 确保窗口响应，只跳过渲染和 buffer 交换。
+
+当前 `dispatchEventQueue()` 同时承担事件处理、绘制和交换缓冲。桌面模式实现前应先拆分为类似流程：
+
+```cpp
+pumpEvents();
+updateWindowState();
+
+if (!paused) {
+    renderFrame();
+    presentFrame();
+}
+```
+
+即使处于全屏暂停、最小化或零尺寸状态，也必须继续处理：
+
+- GLFW/X11 事件。
+- 退出请求和信号。
+- XRandR 显示器变化。
+- 窗口位置、尺寸及层级恢复。
+
+验收标准：人为暂停渲染后，窗口仍可移动、恢复、退出，显示器事件不会堆积；恢复后首帧完整，不出现旧 back buffer 条纹。
+
+### 8.4 步骤 3：实现单显示器 GNOME X11 输出类 ✅
+
+状态：**已实现**
+
+新增 `GNOMEX11WindowOutput` 类，通过 Xlib/EWMH 设置：
+- `_NET_WM_STATE_BELOW` / `_NET_WM_STATE_STICKY` / `_NET_WM_STATE_SKIP_TASKBAR` / `_NET_WM_STATE_SKIP_PAGER`
+- `_NET_WM_DESKTOP = 0xFFFFFFFF`
+- `WM_HINTS.input = False`
+- 窗口几何覆盖 XRandR 活动输出的包围盒
+
+建议新增独立输出类，例如：
+
+```text
+GNOMEX11WindowOutput
+```
+
+窗口创建要求：
+
+- 无边框、不可调整大小、非 floating。
+- 创建时隐藏，完成 X11 属性配置后再显示。
+- `GLFW_FOCUS_ON_SHOW = false`。
+- 设置唯一 `WM_CLASS=linux-wallpaperengine-desktop`。
+
+通过 Xlib/EWMH 设置：
+
+```text
+_NET_WM_STATE_BELOW
+_NET_WM_STATE_STICKY
+_NET_WM_STATE_SKIP_TASKBAR
+_NET_WM_STATE_SKIP_PAGER
+_NET_WM_DESKTOP = 0xFFFFFFFF
+```
+
+同时设置 `WM_HINTS.input = false`，并调用 `XLowerWindow()`。不要在第一版使用 `_NET_WM_WINDOW_TYPE_DESKTOP`；只有实际测试证明普通 managed window 无法保持正确层级时，再单独比较该类型。
+
+第一版先使用当前活动显示器或 XRandR 虚拟桌面边界作为窗口几何，不处理热插拔。
+
+验收标准：窗口显示在 GNOME 背景之上、普通应用之下；不出现在任务栏、分页器和 Alt+Tab；显示时不抢焦点。
+
+### 8.5 步骤 4：点击穿透和全局鼠标位置
+
+桌面窗口默认应点击穿透，避免拦截桌面图标、右键菜单和其他桌面交互。建议通过 XFixes/Shape 将窗口输入区域设为空。
+
+点击穿透后，视差仍可通过 `XQueryPointer()` 获取全局鼠标位置，不需要窗口接收点击事件。
+
+第一版行为：
+
+- 默认点击穿透。
+- 支持全局鼠标位置和 Scene 视差。
+- 不承诺 Scene/Web 点击交互。
+
+后续可增加：
+
+```text
+--interactive
+```
+
+该选项允许窗口接收点击，但必须明确提示可能遮挡桌面图标。若未来需要“观察点击但不阻止下层窗口”，再研究 XI2 旁路事件，不在第一版实现。
+
+验收标准：桌面图标和右键菜单正常；壁纸窗口不获取键盘焦点；视差不会因虚拟桌面坐标产生跳变。
+
+### 8.6 步骤 5：单显示器桌面验收
+
+完成以上代码后，先冻结功能范围并执行单显示器测试：
+
+1. 登录后前台启动和干净退出。
+2. 打开、最小化、最大化和切换普通应用。
+3. 切换 GNOME 工作区。
+4. 打开 Activities Overview。
+5. 使用桌面图标和右键菜单。
+6. 锁屏、解锁及注销前退出。
+7. 运行 Scene 和 Video；Web 暂列为低优先级。
+
+验收标准：层级始终正确，不抢焦点、不出现在窗口列表、不遮挡桌面交互，`Ctrl+C` 后 GNOME 原背景自然露出且无残留窗口。
+
+### 8.7 步骤 6：单窗口多显示器 viewport
+
+通过 XRandR 获取全部活动输出并计算虚拟桌面包围盒：
+
+```text
+minX, minY, maxX, maxY
+```
+
+桌面窗口几何：
+
+```text
+(minX, minY, maxX - minX, maxY - minY)
+```
+
+每个 XRandR 输出对应窗口内一个 viewport，坐标转换为相对包围盒位置。复用现有：
+
+- `screenBackgrounds`
+- `screenScalings`
+- `screenClamps`
+- `spanGroups`
+
+优先使用单个 GLFW/OpenGL context。如果不同刷新率、混合显卡或驱动行为证明单窗口不可行，再考虑同一进程管理多个窗口；不退回多进程方案。
+
+验收标准：支持每屏独立壁纸和跨屏壁纸，显示器位于负坐标或上下排列时 viewport 仍正确。
+
+### 8.8 步骤 7：XRandR 热插拔和布局变化
+
+监听：
+
+```text
+RRScreenChangeNotify
+RROutputChangeNotify
+RRCrtcChangeNotify
+```
+
+收到变化后：
+
+1. 保持事件循环运行并暂缓绘制。
+2. 重新读取活动输出及包围盒。
+3. 调整桌面窗口位置和尺寸。
+4. 重建 viewport 映射。
+5. 检查 framebuffer 尺寸有效后恢复绘制。
+
+验收标准：连接、断开显示器及改变排列后无需重启；不会出现零尺寸计算、旧 framebuffer 条纹或错误的跨屏裁切。
+
+### 8.9 步骤 8：桌面模式全屏暂停
+
+全屏暂停只应用于 `GNOME_X11_DESKTOP_WINDOW` 和需要保留的旧桌面背景模式，绝不应用于预览窗口。
+
+检测策略应从“窗口几何等于显示器”逐步改为读取 EWMH `_NET_WM_STATE_FULLSCREEN`，并测试：
+
+- GNOME 原生应用。
+- 浏览器全屏。
+- Steam/Proton 游戏。
+- 无边框全屏。
+- 多显示器仅一屏全屏。
+
+暂停时只停止场景更新、视频播放和 OpenGL 绘制，事件循环、XRandR 和退出处理必须继续运行。
+
+验收标准：全屏应用出现时壁纸降低资源占用；退出全屏后自动恢复，首帧完整；不会因最大化窗口、桌面外框或其他特殊窗口误暂停。
+
+### 8.10 步骤 9：安全的用户服务和配置
+
+核心桌面模式稳定后再加入：
+
+- JSON/INI 等非可执行配置格式。
+- systemd 用户服务或受控 XDG autostart。
+- `start`、`stop`、`status`、`restart` 和日志查看。
+- 通过 systemd/PID 管理准确停止实例，不使用广泛 `pkill`。
+- 明确的禁用自启动和卸载方法。
+
+第一版开发期间保持前台运行，以便观察日志和使用 `Ctrl+C` 干净退出。
+
+### 8.11 步骤 10：GUI 和壁纸管理
+
+最后再实现 Workshop 扫描、预览、显示器映射、FPS、音量和属性配置。GUI 只负责结构化配置和控制服务，不承载渲染生命周期。对尚未解决的 Web/CEF 支持给出明确状态，不阻塞 Scene 和 Video 桌面模式发布。
 
 ## 9. 下一步建议
 
-下一步先不要继续扩大代码改动，应在真实桌面会话完成阶段 0，建立可重复的运行基线。确认窗口渲染、内容加载和混合显卡行为正常后，再开始 GNOME X11 桌面窗口后端；否则桌面集成问题可能与渲染器或驱动问题混在一起，增加调试成本。
+Scene、Video、窗口比例、运行时 resize、受控退出和预览窗口全屏误暂停已经完成本机验证；Web/CEF 初始化仍有问题，但用户使用频率低，不作为 GNOME X11 桌面模式的前置条件。长时间资源占用和更多全屏组合测试暂后置。
 
-建议首个测试命令：
-
-```bash
-cd ~/linux-wallpaperengine
-./build/output/linux-wallpaperengine \
-  --assets-dir ~/.local/share/Steam/steamapps/common/wallpaper_engine/assets \
-  --window 0x0x1280x720 \
-  --fps 30 \
-  --silent \
-  2955458015
-```
-
-需要可拖动、可缩放的普通测试窗口时，去掉 `--window`：
-
-```bash
-cd ~/linux-wallpaperengine
-./build/output/linux-wallpaperengine \
-  --assets-dir ~/.local/share/Steam/steamapps/common/wallpaper_engine/assets \
-  --fps 30 \
-  --silent \
-  2955458015
-```
-
-运行后应记录：是否显示、是否正确播放、退出是否干净、终端日志、`glxinfo -B` 输出以及 `nvidia-smi`/系统监视器中的 GPU 占用。
+下一项开发工作应严格从 **8.2 步骤 1** 开始：新增 `GNOME_X11_DESKTOP_WINDOW` 和 `--gnome-x11`，只建立独立模式及 factory 路由，不在同一个提交中同时加入 EWMH、多显示器或服务化。模式骨架验证后，再执行 **8.3 步骤 2** 的事件循环拆分。

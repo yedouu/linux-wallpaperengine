@@ -394,6 +394,12 @@ WaylandOpenGLDriver::~WaylandOpenGLDriver () {
     }
 }
 
+void WaylandOpenGLDriver::pumpEvents () {
+	if (wl_display_dispatch (m_waylandContext.display) == -1) {
+		m_requestedExit = true;
+	}
+}
+
 void WaylandOpenGLDriver::dispatchEventQueue () {
     static bool initialized = false;
 

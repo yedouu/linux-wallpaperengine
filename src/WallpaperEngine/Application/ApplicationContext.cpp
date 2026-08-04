@@ -269,6 +269,9 @@ void ApplicationContext::loadSettingsFromArgv () {
 	    if (this->settings.render.mode == DESKTOP_BACKGROUND) {
 		sLog.exception ("Cannot run in both background and window mode");
 	    }
+	    if (this->settings.render.mode == GNOME_X11_DESKTOP_WINDOW) {
+		sLog.exception ("Cannot run in both GNOME X11 desktop and window mode");
+	    }
 	    if (this->settings.render.mode == EXPLICIT_WINDOW) {
 		sLog.exception ("Only one window at a time can be specified in explicit window mode");
 	    }
@@ -294,6 +297,18 @@ void ApplicationContext::loadSettingsFromArgv () {
 	    this->settings.render.window.geometry.w = strtol (delim3 + 1, nullptr, 10);
 	})
 	.append ();
+    backgroundMode.add_argument ("--gnome-x11")
+	.help ("GNOME X11 desktop window mode: creates a managed window below normal app windows (X11 only)")
+	.flag ()
+	.action ([this] (const std::string&) -> void {
+	    if (this->settings.render.mode == EXPLICIT_WINDOW) {
+		sLog.exception ("Cannot run in both GNOME X11 desktop and window mode");
+	    }
+	    if (this->settings.render.mode == DESKTOP_BACKGROUND) {
+		sLog.exception ("Cannot run in both GNOME X11 desktop and background mode");
+	    }
+	    this->settings.render.mode = GNOME_X11_DESKTOP_WINDOW;
+	});
     backgroundMode.add_argument ("-r", "--screen-root")
 	.help ("The screen the following settings will have an effect on")
 	.action ([this, &lastScreen] (const std::string& value) -> void {
@@ -309,6 +324,9 @@ void ApplicationContext::loadSettingsFromArgv () {
 	    if (this->settings.render.mode == EXPLICIT_WINDOW) {
 		sLog.exception ("Cannot run in both background and window mode");
 	    }
+	    if (this->settings.render.mode == GNOME_X11_DESKTOP_WINDOW) {
+		sLog.exception ("Cannot run in both GNOME X11 desktop and background mode");
+	    }
 
 	    this->settings.render.mode = DESKTOP_BACKGROUND;
 	    lastScreen = value;
@@ -322,6 +340,9 @@ void ApplicationContext::loadSettingsFromArgv () {
 	.action ([this, &lastScreen] (const std::string& value) -> void {
 	    if (this->settings.render.mode == EXPLICIT_WINDOW) {
 		sLog.exception ("Cannot run in both background and window mode");
+	    }
+	    if (this->settings.render.mode == GNOME_X11_DESKTOP_WINDOW) {
+		sLog.exception ("Cannot run in both GNOME X11 desktop and background mode");
 	    }
 
 	    this->settings.render.mode = DESKTOP_BACKGROUND;
@@ -668,7 +689,8 @@ void ApplicationContext::loadSettingsFromArgv () {
 
 	// Window previews should preserve the wallpaper's aspect ratio by default.
 	// Keep the existing desktop defaults unless the user explicitly requests a mode.
-	if (this->settings.render.mode != DESKTOP_BACKGROUND) {
+	if (this->settings.render.mode != DESKTOP_BACKGROUND
+		&& this->settings.render.mode != GNOME_X11_DESKTOP_WINDOW) {
 	    if (!windowScalingSpecified) {
 		this->settings.render.window.scalingMode
 		    = WallpaperEngine::Render::WallpaperState::TextureUVsScaling::ZoomFitUVs;

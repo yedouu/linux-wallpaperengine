@@ -70,7 +70,8 @@ public:
     void hideWindow () override;
     glm::ivec2 getFramebufferSize () const override;
     uint32_t getFrameCounter () const override;
-    void dispatchEventQueue () override;
+    void pumpEvents () override;
+	void dispatchEventQueue () override;
     [[nodiscard]] void* getProcAddress (const char* name) const override;
 
     void onLayerClose (Output::WaylandOutputViewport*);

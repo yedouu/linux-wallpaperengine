@@ -10,7 +10,8 @@ using namespace WallpaperEngine::Render::Drivers::Output;
 
 GLFWWindowOutput::GLFWWindowOutput (ApplicationContext& context, VideoDriver& driver) : Output (context, driver) {
     if (this->m_context.settings.render.mode != Application::ApplicationContext::NORMAL_WINDOW
-	&& this->m_context.settings.render.mode != Application::ApplicationContext::EXPLICIT_WINDOW) {
+	&& this->m_context.settings.render.mode != Application::ApplicationContext::EXPLICIT_WINDOW
+	&& this->m_context.settings.render.mode != Application::ApplicationContext::GNOME_X11_DESKTOP_WINDOW) {
 	sLog.exception ("Initializing window output when not in output mode, how did you get here?!");
     }
 

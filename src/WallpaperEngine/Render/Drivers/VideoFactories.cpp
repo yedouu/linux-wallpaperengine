@@ -68,6 +68,7 @@ std::unique_ptr<VideoDriver> VideoFactories::createVideoDriver (
     // and it's not like the current map properly allows for storing this
     // so hijacking the detection is probably best for now
     const auto factory = mode != Application::ApplicationContext::DESKTOP_BACKGROUND
+	&& mode != Application::ApplicationContext::GNOME_X11_DESKTOP_WINDOW
 	? sessionTypeToFactory->second.find (DEFAULT_WINDOW_NAME)
 	: sessionTypeToFactory->second.find (xdgSessionType);
 
@@ -87,7 +88,8 @@ std::unique_ptr<Detectors::FullScreenDetector> VideoFactories::createFullscreenD
     // normal or explicit preview window stops that window's event loop whenever
     // another application is fullscreen, leaving resize events unprocessed and
     // newly exposed back-buffer areas unpainted.
-    if (context.settings.render.mode != ApplicationContext::DESKTOP_BACKGROUND
+    if ((context.settings.render.mode != ApplicationContext::DESKTOP_BACKGROUND
+	 && context.settings.render.mode != ApplicationContext::GNOME_X11_DESKTOP_WINDOW)
 	|| it == this->m_fullscreenFactories.end () || !context.settings.render.pauseOnFullscreen) {
 	return std::make_unique<Detectors::FullScreenDetector> (context);
     }

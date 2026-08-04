@@ -68,6 +68,11 @@ public:
      */
     [[nodiscard]] virtual void* getProcAddress (const char* name) const = 0;
     /**
+     * Process window events only, without rendering or buffer swap.
+     * Must be called even when rendering is paused so the window stays responsive.
+     */
+    virtual void pumpEvents () = 0;
+    /**
      * Process events on the driver and renders a frame
      */
     virtual void dispatchEventQueue () = 0;

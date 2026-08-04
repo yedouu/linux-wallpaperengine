@@ -38,6 +38,8 @@ public:
 	DESKTOP_BACKGROUND = 1,
 	/** Explicit window mode with specified geometry */
 	EXPLICIT_WINDOW = 2,
+	/** GNOME X11 desktop window mode (managed window below normal apps) */
+	GNOME_X11_DESKTOP_WINDOW = 3,
     };
 
     /**
