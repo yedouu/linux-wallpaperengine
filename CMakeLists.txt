@@ -231,7 +231,6 @@ if(X11_SUPPORT_FOUND)
 
     set(X11_LIBRARIES
         ${X11_LIBRARIES}
-        Xfixes
         ${X11_Xrandr_LIB})
     set(X11_SOURCES
         src/WallpaperEngine/Render/Drivers/Output/X11Output.cpp
