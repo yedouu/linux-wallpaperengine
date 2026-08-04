@@ -232,6 +232,16 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 - 分别测试默认 GPU、`DRI_PRIME` 和 NVIDIA PRIME Render Offload。
 - 将 GPU 选择保留为启动环境配置，不在第一阶段硬编码厂商逻辑。
 
+## 4.8 Alt+Tab 露出系统壁纸（已知限制）
+
+状态：**已确认根因，暂不修复**
+
+现象：使用 `_NET_WM_WINDOW_TYPE_DESKTOP` 类型时，Alt+Tab 切换窗口期间 Shell compositor 会隐藏所有 DESKTOP 层窗口，露出 nautilus 的原壁纸层。
+
+根因：这是 GNOME Shell compositor 的硬编码行为——切换模式下 DESKTOP 类型窗口被整体隐藏，应用进程无法通过 X11 窗口属性绕开。
+
+可行修复方案：编写 GNOME Shell Extension，在 Shell 进程内部拦截切换事件，但技术代价大（JS 技术栈分离、Shell 版本耦合、额外部署步骤），当前优先推进核心桌面功能，后续再考虑用小扩展精细打磨。
+
 ## 5. 内容类型兼容性
 
 ### Scene
