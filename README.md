@@ -377,6 +377,23 @@ self-start on login — no `pkill` involved.
    systemctl --user status linux-wallpaperengine
    ```
 
+#### Development mode (no `/opt`, no sudo)
+
+While iterating on the codebase you can point the service straight at your build
+directory instead of installing to `/opt`:
+
+```bash
+LWE_BIN="$PWD/build/output/linux-wallpaperengine" \
+LWE_SHARE_DIR="$PWD/packaging/linux" \
+packaging/linux/lwe install
+
+systemctl --user enable --now linux-wallpaperengine   # or: packaging/linux/lwe enable
+systemctl --user status linux-wallpaperengine
+```
+
+> ⚠ The service then runs the binary inside `build/output` — a later rebuild
+> overwrites it. For a permanent install, switch to `/opt` later.
+
 ---
 
 ## 🌈 Example Backgrounds

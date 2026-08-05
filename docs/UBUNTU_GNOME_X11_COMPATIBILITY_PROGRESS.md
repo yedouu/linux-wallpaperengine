@@ -558,6 +558,7 @@ RRCrtcChangeNotify
 - ✅ 管理脚本：`packaging/linux/lwe` 提供 `install|start|stop|restart|status|enable|disable|uninstall`，全程 `systemctl --user`，不使用 `pkill`。
 - ✅ 示例配置：`packaging/linux/config.example.json`，安装时复制到 `~/.config/linux-wallpaperengine/config.json`。
 - ✅ README 已补充 systemd 用法；卸载（`lwe uninstall`）会停服务并移除 unit。
+- ✅ 开发模式：`LWE_BIN=$PWD/build/output/linux-wallpaperengine LWE_SHARE_DIR=$PWD/packaging/linux lwe install` 可无需 sudo 直接指向 build 目录跑服务；注意后续重新构建会覆盖该二进制，正式使用应切到 `/opt`（详见 README）。
 
 仍为前台运行的替代方式：`./linux-wallpaperengine --config ~/.config/linux-wallpaperengine/config.json`。
 
