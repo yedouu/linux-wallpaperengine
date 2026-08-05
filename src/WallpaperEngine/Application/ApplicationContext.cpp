@@ -83,6 +83,93 @@ std::optional<JSON> ApplicationContext::parseConfigJson (const std::filesystem::
     }
 }
 
+bool ApplicationContext::loadConfigFileArguments () {
+    // Locate --config <path> / --config=<path> and strip it from argv so the
+    // config path itself is never interpreted as a wallpaper argument.
+    std::string configPath;
+    std::vector<std::string> filtered;
+    filtered.reserve (m_argc);
+    for (int i = 0; i < m_argc; i++) {
+	const std::string arg (m_argv[i]);
+	if (arg == "--config") {
+	    if (i + 1 < m_argc) configPath = m_argv[++i];
+	} else if (arg.rfind ("--config=", 0) == 0) {
+	    configPath = arg.substr (std::strlen ("--config="));
+	} else {
+	    filtered.push_back (arg);
+	}
+    }
+
+    if (configPath.empty ()) return false;
+
+    const auto root = this->parseConfigJson (configPath);
+    if (!root.has_value ()) return false;
+
+    // Map each JSON key to a CLI argument. Booleans become flags (only when true),
+    // "wallpaper" becomes a positional background, everything else is --key=value.
+    // A key that is already present on the command line is skipped so that explicit
+    // CLI arguments always win (argparse rejects duplicate non-append options).
+    const auto cliHasOption = [&filtered] (const std::string& key) {
+	const std::string flag = "--" + key;
+	for (std::size_t i = 1; i < filtered.size (); i++) {
+	    if (filtered[i] == flag || filtered[i].rfind (flag + "=", 0) == 0) return true;
+	}
+	return false;
+    };
+    const std::vector<std::string> kFlagOnlyOptions = {
+	"--gnome-x11",	       "--silent",	 "--cycle",	  "--noautomute",	 "--no-audio-processing",
+	"--disable-mouse",      "--disable-parallax", "--disable-particles", "--no-fullscreen-pause", "--dump-structure",
+	"--list-properties",    "--fullscreen-pause-only-active",
+    };
+    const auto cliHasPositional = [&filtered, &kFlagOnlyOptions] {
+	for (std::size_t i = 1; i < filtered.size (); i++) {
+	    const std::string& arg = filtered[i];
+	    if (arg.empty () || arg[0] == '-') continue;
+	    // Skip the value of the preceding option (the "--key value" form).
+	    if (filtered[i - 1][0] == '-'
+		&& std::find (kFlagOnlyOptions.begin (), kFlagOnlyOptions.end (), filtered[i - 1])
+		    == kFlagOnlyOptions.end ()) {
+		continue;
+	    }
+	    return true;
+	}
+	return false;
+    };
+
+    std::vector<std::string> configArgs;
+    for (auto it = root->begin (); it != root->end (); ++it) {
+	const std::string key = it.key ();
+	if (key == "wallpaper") {
+	    if (!cliHasPositional ()) configArgs.push_back (it.value ().get<std::string> ());
+	} else if (cliHasOption (key)) {
+	    continue;
+	} else if (it.value ().is_boolean ()) {
+	    if (it.value ().get<bool> ()) configArgs.push_back ("--" + key);
+	} else if (it.value ().is_string ()) {
+	    configArgs.push_back ("--" + key + "=" + it.value ().get<std::string> ());
+	} else {
+	    configArgs.push_back ("--" + key + "=" + it.value ().dump ());
+	}
+    }
+
+    // Rebuild argv as: <program> <config args> <remaining CLI args>
+    m_effectiveArgv.clear ();
+    m_effectiveArgv.push_back (filtered.empty () ? std::string ("linux-wallpaperengine") : filtered.front ());
+    m_effectiveArgv.insert (m_effectiveArgv.end (), configArgs.begin (), configArgs.end ());
+    for (std::size_t i = 1; i < filtered.size (); i++) {
+	m_effectiveArgv.push_back (filtered[i]);
+    }
+
+    m_argvStorage.clear ();
+    m_argvStorage.reserve (m_effectiveArgv.size ());
+    for (auto& arg : m_effectiveArgv) {
+	m_argvStorage.push_back (const_cast<char*> (arg.c_str ()));
+    }
+    m_argc = static_cast<int> (m_argvStorage.size ());
+    m_argv = m_argvStorage.data ();
+    return true;
+}
+
 std::optional<ApplicationContext::PlaylistDefinition>
 ApplicationContext::buildPlaylistDefinition (const JSON& playlistJson, const std::string& fallbackName) const {
     PlaylistDefinition definition;
@@ -248,6 +335,10 @@ void ApplicationContext::loadSettingsFromArgv () {
     std::string lastScreen;
     bool windowScalingSpecified = false;
     bool windowClampSpecified = false;
+
+    // Expand the --config <path> startup file (if any) into default arguments.
+    // They are prepended to argv, so explicit CLI flags still win.
+    this->loadConfigFileArguments ();
 
     argparse::ArgumentParser program ("linux-wallpaperengine", "0.0", argparse::default_arguments::help);
 

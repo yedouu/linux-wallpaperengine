@@ -1,0 +1,9 @@
+{
+    "assets-dir": "/home/USER/.local/share/Steam/steamapps/common/wallpaper_engine/assets",
+    "gnome-x11": true,
+    "fps": 30,
+    "silent": true,
+    "cycle": true,
+    "cycle-interval": 60,
+    "wallpaper": "2955458015"
+}

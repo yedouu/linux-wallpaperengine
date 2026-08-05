@@ -287,7 +287,20 @@ private:
     void registerPlaylist (PlaylistDefinition&& definition);
     [[nodiscard]] const PlaylistDefinition& getPlaylistFromConfig (const std::string& name);
 
+    /**
+     * Reads a --config <path> startup file (when present) and expands its keys into
+     * command-line arguments that are prepended to argv. Explicit CLI arguments still
+     * take precedence because they come afterwards.
+     *
+     * @return true if a config file was applied
+     */
+    bool loadConfigFileArguments ();
+
     std::map<std::string, PlaylistDefinition> m_configPlaylists;
     bool m_loadedConfigPlaylists = false;
+
+    /** Storage for the effective argv rebuilt after expanding --config */
+    std::vector<std::string> m_effectiveArgv;
+    std::vector<char*> m_argvStorage;
 };
 } // namespace WallpaperEngine::Application

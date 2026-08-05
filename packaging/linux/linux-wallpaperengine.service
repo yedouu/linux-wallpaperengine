@@ -1,0 +1,13 @@
+[Unit]
+Description=Linux Wallpaper Engine (GNOME X11 desktop wallpaper)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/opt/linux-wallpaperengine/linux-wallpaperengine --config %h/.config/linux-wallpaperengine/config.json
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

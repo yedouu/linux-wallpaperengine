@@ -330,6 +330,53 @@ linux-wallpaperengine --set-property bloom=1 2370927443
 
 > ⚠ For X11 users: Currently doesn't work if a compositor or desktop environment (e.g. GNOME, KDE, Nautilus) is drawing the background.
 
+### ⚙️ systemd User Service (GNOME X11)
+
+This fork ships a systemd user service plus a structured JSON config so the wallpaper
+can run as a proper user service with clean `start`/`stop`/`restart` and
+self-start on login — no `pkill` involved.
+
+1. **Install the service** (replace `/opt/linux-wallpaperengine` with your binary path if you didn't install there):
+
+   ```bash
+   sudo make install                      # or copy the build/output contents to /opt/linux-wallpaperengine
+   LWE_BIN=/opt/linux-wallpaperengine/linux-wallpaperengine \
+     LWE_SHARE_DIR=/opt/linux-wallpaperengine \
+     packaging/linux/lwe install
+   ```
+
+2. **Edit the generated config** at `~/.config/linux-wallpaperengine/config.json`:
+
+   ```json
+   {
+       "assets-dir": "/home/USER/.local/share/Steam/steamapps/common/wallpaper_engine/assets",
+       "gnome-x11": true,
+       "fps": 30,
+       "silent": true,
+       "cycle": true,
+       "cycle-interval": 60,
+       "wallpaper": "2955458015"
+   }
+   ```
+
+   Every JSON key maps to a command-line flag; explicit CLI arguments always win.
+
+3. **Enable + start** (and stop / restart / status):
+
+   ```bash
+   packaging/linux/lwe enable
+   packaging/linux/lwe status
+   packaging/linux/lwe restart
+   packaging/linux/lwe disable
+   packaging/linux/lwe uninstall
+   ```
+
+   Or use `systemctl --user` directly:
+
+   ```bash
+   systemctl --user status linux-wallpaperengine
+   ```
+
 ---
 
 ## 🌈 Example Backgrounds
