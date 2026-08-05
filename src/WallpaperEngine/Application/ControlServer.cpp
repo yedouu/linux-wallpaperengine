@@ -9,8 +9,7 @@
 
 using namespace WallpaperEngine::Application;
 
-ControlServer::ControlServer (const std::string& socketPath, CommandHandler handler) :
-	m_socketPath (socketPath), m_handler (std::move (handler)) {
+ControlServer::ControlServer (const std::string& socketPath) : m_socketPath (socketPath) {
 	unlink (m_socketPath.c_str ());
 	m_thread = std::thread (&ControlServer::run, this);
 }
@@ -28,6 +27,19 @@ ControlServer::~ControlServer () {
 	}
 	if (m_thread.joinable ()) m_thread.join ();
 	unlink (m_socketPath.c_str ());
+}
+
+void ControlServer::pushCommand (const std::string& cmd, const std::string& payload) {
+	std::lock_guard<std::mutex> lock (m_mutex);
+	m_commands.emplace_back (cmd, payload);
+}
+
+bool ControlServer::tryPopCommand (Command& command) {
+	std::lock_guard<std::mutex> lock (m_mutex);
+	if (m_commands.empty ()) return false;
+	command = std::move (m_commands.front ());
+	m_commands.pop_front ();
+	return true;
 }
 
 void ControlServer::run () {
@@ -78,7 +90,7 @@ void ControlServer::run () {
 			std::string payload = extract ("path");
 			if (payload.empty ()) payload = extract ("enabled");
 
-			m_handler (cmd, payload);
+			this->pushCommand (cmd, payload);
 		}
 		close (clientFd);
 	}

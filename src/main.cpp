@@ -1,11 +1,46 @@
 #include <csignal>
+#include <fcntl.h>
 #include <iostream>
+#include <string>
+#include <sys/file.h>
+#include <unistd.h>
 
 #include "WallpaperEngine/Application/ApplicationContext.h"
 #include "WallpaperEngine/Application/WallpaperApplication.h"
 #include "WallpaperEngine/Logging/Log.h"
 
 WallpaperEngine::Application::WallpaperApplication* app;
+
+// ---- Single-instance guard ----
+// The crash-and-restart pattern can otherwise leave several instances alive at once,
+// each with its own render loop, socket thread and audio threads, which shows up as a
+// pile of threads in htop. flock() is released automatically when the process dies, so a
+// stale lock file can never block a restart.
+static int g_singleInstanceFd = -1;
+
+static bool acquireSingleInstanceLock () {
+	const char* runtime = getenv ("XDG_RUNTIME_DIR");
+	const std::string lockPath
+	    = runtime != nullptr && runtime[0] != '\0' ? std::string (runtime) + "/linux-wallpaperengine.lock"
+							: "/tmp/linux-wallpaperengine.lock";
+
+	g_singleInstanceFd = open (lockPath.c_str (), O_CREAT | O_RDWR, 0600);
+	if (g_singleInstanceFd < 0) {
+		// Cannot create the lock file; don't block normal use.
+		return true;
+	}
+
+	if (flock (g_singleInstanceFd, LOCK_EX | LOCK_NB) != 0) {
+		close (g_singleInstanceFd);
+		g_singleInstanceFd = -1;
+		std::cerr
+		    << "Another linux-wallpaperengine instance is already running. Stop it first "
+		       "(systemctl --user stop linux-wallpaperengine) before starting a new one."
+		    << std::endl;
+		return false;
+	}
+	return true;
+}
 
 void signalhandler (const int sig) {
     if (app == nullptr) {
@@ -46,6 +81,11 @@ int main (int argc, char* argv[]) {
 	WallpaperEngine::Application::ApplicationContext appContext (argc, argv);
 
 	appContext.loadSettingsFromArgv ();
+
+	// Only enforce single-instance after parsing so --help / --list-properties still work.
+	if (!acquireSingleInstanceLock ()) {
+	    return 1;
+	}
 
 	app = new WallpaperEngine::Application::WallpaperApplication (appContext);
 

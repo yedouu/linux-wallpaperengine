@@ -1081,15 +1081,9 @@ void WallpaperApplication::show () {
 	std::signal (SIGSEGV, crashRecorder);
 	std::signal (SIGABRT, crashRecorder);
     setup ();
-    this->m_controlServer = std::make_unique<WallpaperEngine::Application::ControlServer> (
-        "/tmp/lwe-control.sock",
-        [this](const std::string& cmd, const std::string& payload) {
-            if (cmd == "next") this->nextWallpaper ();
-            else if (cmd == "prev") this->prevWallpaper ();
-            else if (cmd == "cycle") this->setCycleEnabled (payload == "1");
-            else if (cmd == "set" && !payload.empty ()) this->setWallpaper (payload);
-        });
+    this->m_controlServer = std::make_unique<WallpaperEngine::Application::ControlServer> ("/tmp/lwe-control.sock");
     while (this->m_context.state.general.keepRunning) {
+	this->processControlCommands ();
 	render ();
     }
     cleanup ();
@@ -1124,6 +1118,17 @@ void WallpaperApplication::setDestinationFramebuffer (GLuint framebuffer) {
 }
 
 GLuint WallpaperApplication::getDestinationFramebuffer () const { return this->m_destinationFramebuffer; }
+void WallpaperApplication::processControlCommands () {
+    if (!m_controlServer) return;
+    WallpaperEngine::Application::ControlServer::Command command;
+    while (m_controlServer->tryPopCommand (command)) {
+        const auto& [cmd, payload] = command;
+        if (cmd == "next") this->nextWallpaper ();
+        else if (cmd == "prev") this->prevWallpaper ();
+        else if (cmd == "cycle") this->setCycleEnabled (payload == "1");
+        else if (cmd == "set" && !payload.empty ()) this->setWallpaper (payload);
+    }
+}
 void WallpaperApplication::nextWallpaper () {
     for (auto& [screen, playlist] : m_activePlaylists) {
 	const auto now = std::chrono::steady_clock::now ();

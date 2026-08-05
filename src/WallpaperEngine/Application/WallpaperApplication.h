@@ -151,6 +151,11 @@ private:
     void setCycleEnabled (bool enabled);
     /** Switch to a specific wallpaper by path. */
     void setWallpaper (const std::filesystem::path& path);
+    /**
+     * Drains control commands queued by ControlServer and executes them.
+     * Must be called from the render loop (main thread) only.
+     */
+    void processControlCommands ();
 
     struct ActivePlaylist {
 	ApplicationContext::PlaylistDefinition definition;
