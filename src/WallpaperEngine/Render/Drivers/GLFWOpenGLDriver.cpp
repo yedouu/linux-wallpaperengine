@@ -72,6 +72,14 @@ GLFWOpenGLDriver::GLFWOpenGLDriver (const char* windowTitle, ApplicationContext&
 	sLog.error ("Failed to initialize GLEW: ", glewGetErrorString (result));
     }
 
+    // diagnostic: report the OpenGL renderer/vendor so GPU selection
+    // (integrated vs. discrete) is visible in the logs
+    sLog.out (
+	"OpenGL renderer: ", reinterpret_cast<const char*> (glGetString (GL_RENDERER)),
+	" (", reinterpret_cast<const char*> (glGetString (GL_VENDOR)),
+	", GL ", reinterpret_cast<const char*> (glGetString (GL_VERSION)), ")"
+    );
+
     // setup output
     if (context.settings.render.mode == ApplicationContext::EXPLICIT_WINDOW
 	|| context.settings.render.mode == ApplicationContext::NORMAL_WINDOW) {

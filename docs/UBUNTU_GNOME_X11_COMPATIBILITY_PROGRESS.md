@@ -1,6 +1,6 @@
 # Ubuntu 22.04 + GNOME X11 兼容性进度
 
-最后更新：2026-08-04
+最后更新：2026-08-05
 
 ## 1. 目标
 
@@ -95,7 +95,7 @@
 
 ### 3.5 GCC 收到 Clang 专用警告选项
 
-状态：**已发现，尚未修复；不阻止构建**
+状态：**已修复并验证**
 
 现象：GCC 输出：
 
@@ -105,7 +105,9 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 
 影响：当前只是提示，不会导致构建失败，但会污染日志并掩盖真正警告。
 
-建议方案：在 CMake 中根据 `CMAKE_CXX_COMPILER_ID` 添加编译器专用选项，或使用 `CheckCXXCompilerFlag` 检查后再加入该参数。
+解决方案：CEF 的 `cef_variables.cmake` 用 `CHECK_CXX_COMPILER_FLAG` 检测该 Clang 专用选项，GCC 对未知 `-Wno-*` 只打 note 被误判为支持。在 `CMakeLists.txt` 的 CEF flags 清理区块按 `CMAKE_CXX_COMPILER_ID STREQUAL "GNU"` 剔除该选项。
+
+验证：重新配置 + 增量构建后日志不再出现 `unrecognized command-line option '-Wno-undefined-var-template'`。
 
 ## 4. 已知运行与桌面集成问题
 
@@ -220,17 +222,19 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 - 增加调试日志，记录活动窗口、`_NET_WM_STATE_FULLSCREEN` 和暂停状态变化。
 - 后续提供应用忽略列表，并将 Wayland 专用的过滤能力扩展到 X11。
 
-### 4.7 混合显卡选择尚未验证
+### 4.7 混合显卡选择（已验证）
 
-状态：**待验证**
+状态：**已验证**
 
-环境同时包含 Intel 集成显卡和 NVIDIA 独立显卡。当前尚未确认 GLFW/OpenGL 默认选择的 GPU，也未测量 Scene、Video 和 Web 壁纸在两块 GPU 上的资源占用。
+环境同时包含 Intel 集成显卡（`8086:a780`）和 NVIDIA 独立显卡（RTX 3050，`10de:2582`）。已在真实 GNOME X11 桌面用 Scene 壁纸 `2955458015` 实测：
 
-建议方案：
+| 启动方式 | OpenGL 渲染器 | 结果 |
+| --- | --- | --- |
+| 默认（无环境变量） | `NVIDIA GeForce RTX 3050/PCIe/SSE2`，GL 3.3.0 NVIDIA 595.84 | ✅ Scene 渲染正常（`--screenshot` 输出 640x480 PNG，非黑屏，约 2.9 万种颜色） |
+| `DRI_PRIME=1` | 仍为 NVIDIA RTX 3050 | ✅ 正常；此机默认即为 NVIDIA，非 PRIME offload 配置下 `DRI_PRIME` 不切换 |
+| `__GLX_VENDOR_LIBRARY_NAME=mesa` | `llvmpipe`（LLVM 15.0.7，GL 4.5 Core，软件回退） | ⚠️ Intel 硬件 GLX（dri3）在当前 X 会话不可用，回退软件渲染；属环境 GLX 配置限制，非程序问题 |
 
-- 先记录默认渲染器和 OpenGL 版本。
-- 分别测试默认 GPU、`DRI_PRIME` 和 NVIDIA PRIME Render Offload。
-- 将 GPU 选择保留为启动环境配置，不在第一阶段硬编码厂商逻辑。
+结论：本机 X11 GLX 下硬件渲染统一走 NVIDIA，无厂商冲突；GPU 选择保留为启动环境配置，未硬编码厂商逻辑。已在 `GLFWOpenGLDriver` 上下文初始化后输出 `OpenGL renderer/vendor/version` 诊断日志，便于在其他机器确认 GPU 选择。
 
 ## 4.8 Alt+Tab 露出系统壁纸（已知限制）
 
@@ -299,17 +303,19 @@ CMake 会从 CEF 分发服务器下载指定版本并使用 SHA-1 校验。首�
 
 ### 6.2 自动测试缺失
 
-状态：**已确认**
+状态：**部分完成（纯单元测试）**
 
-执行 `ctest --test-dir build` 显示没有注册测试。当前只能证明项目编译、链接和命令行解析成功，不能自动证明颜色解析、媒体元数据、渲染结果或桌面行为正确。
+已完成并接入 `ctest`（`include(CTest)` + `catch_discover_tests`）：
 
-建议优先补充：
+1. `ColorBuilder` 测试：`#RGB`、`#RGBA`、`#RRGGBB`、`#RRGGBBAA` 解析 + alpha 参数 + 非法格式异常（修复过程中还发现并修正了 6 位颜色丢红色、8 位 hex 超出 `int` 溢出的上游 bug）。
+2. MediaSource 头文件独立编译测试（`MediaSourceHeaders.cpp`），防止再次依赖传递包含。
+3. 命令行参数解析测试（`CommandLineParsing.cpp`）：窗口/GNOME X11/互斥/`--fps`/`--cycle`/`--config` 合并。
+4. `ControlServer` 命令队列测试（`ControlServerQueue.cpp`）：验证网络线程只入队、主线程消费、按序取出。
 
-1. `ColorBuilder` 的 `#RGB`、`#RGBA`、`#RRGGBB`、`#RRGGBBAA` 单元测试。
-2. MediaSource 头文件独立编译测试，防止再次依赖传递包含。
-3. 命令行参数解析测试。
-4. 基于 Xvfb 的 X11 窗口属性测试。
-5. 选定 Scene 的截图基线测试；允许为不同 GPU 设置合理容差。
+当前 `ctest` 共 32 个用例全部通过。仍建议后续补充：
+
+1. 基于 Xvfb 的 X11 窗口属性集成测试。
+2. 选定 Scene 的截图基线测试；允许为不同 GPU 设置合理容差。
 
 ## 7. 外部 GNOME X11 桥接脚本的问题
 
@@ -545,15 +551,15 @@ RRCrtcChangeNotify
 
 ### 8.10 步骤 9：安全的用户服务和配置
 
-核心桌面模式稳定后再加入：
+状态：**已实现**
 
-- JSON/INI 等非可执行配置格式。
-- systemd 用户服务或受控 XDG autostart。
-- `start`、`stop`、`status`、`restart` 和日志查看。
-- 通过 systemd/PID 管理准确停止实例，不使用广泛 `pkill`。
-- 明确的禁用自启动和卸载方法。
+- ✅ `--config <path>`：程序支持从 JSON 读取启动参数（键 → CLI 参数，显式 CLI 覆盖），见 `ApplicationContext::loadConfigFileArguments`。
+- ✅ systemd 用户服务：`packaging/linux/linux-wallpaperengine.service`。
+- ✅ 管理脚本：`packaging/linux/lwe` 提供 `install|start|stop|restart|status|enable|disable|uninstall`，全程 `systemctl --user`，不使用 `pkill`。
+- ✅ 示例配置：`packaging/linux/config.example.json`，安装时复制到 `~/.config/linux-wallpaperengine/config.json`。
+- ✅ README 已补充 systemd 用法；卸载（`lwe uninstall`）会停服务并移除 unit。
 
-第一版开发期间保持前台运行，以便观察日志和使用 `Ctrl+C` 干净退出。
+仍为前台运行的替代方式：`./linux-wallpaperengine --config ~/.config/linux-wallpaperengine/config.json`。
 
 ### 8.11 步骤 10：GUI 和壁纸管理
 
@@ -574,7 +580,23 @@ RRCrtcChangeNotify
 | puppet 模型 | ⚠️ | 仅支持 MDLV0021/0023，Sea Train 挂环等 MDLV0013 渲染不完整（见 11.8） |
 | Alt+Tab 露原壁纸 | ⚠️ | GNOME compositor 限制，需 Shell Extension |
 | 视差效果 | ⚠️ | `XQueryPointer` 已就绪，需有 parallax 的壁纸验证 |
-| 托盘控制面板 | 🔴 | 线程安全问题暂停，后续重新设计 |
+| 托盘控制面板 | ✅ | `ControlServer` 改为命令队列，主线程消费，消除后台线程数据竞争 |
+| 混合显卡 | ✅ | X11 GLX 下硬件渲染统一走 NVIDIA（见 4.7），默认渲染器有诊断日志 |
+
+### 4.9 崩溃重启后线程/实例堆积（已加单实例锁）
+
+状态：**已定位并加固**
+
+现象：htop 中看到大量 linux-wallpaperengine 线程，怀疑崩溃重启后旧线程未销毁、内存暴涨。
+
+排查结论：
+
+- 单个实例本身就有约 28 个线程（主渲染线程 + `ControlServer` socket 线程 + SDL/音频回调 + FFmpeg 解码 + GLFW 等），这是**单实例的正常线程数**；`--cycle` 连续切换 18 次后线程数**保持 28 不变**，`ControlServer`/`AudioStream` 均有 join/wait 清理，**壁纸切换本身不泄漏**。
+- 进程一旦死亡（SIGSEGV/`kill`），内核必然回收其全部线程与内存。"旧线程不销毁"的实质是**多个实例同时共存**（崩溃后启动新实例而旧实例未退出/未停止，或 systemd 重启与手动启动并存），每个实例各自再带一批线程与数百 MB 内存。
+
+加固：`main.cpp` 增加**单实例锁**（`XDG_RUNTIME_DIR/linux-wallpaperengine.lock` 上的 `flock`，在 `loadSettingsFromArgv` 后获取，`--help`/`--list-properties` 不受影响）。第二个实例启动即被拒绝并提示用 `systemctl --user stop linux-wallpaperengine` 停止旧实例；`flock` 随进程退出由内核自动释放，崩溃后重启不受影响。
+
+验证：双实例启动被拒；`kill -9` 后立即可重启；操作后无残留实例。
 
 ## 10. 下一步建议
 
