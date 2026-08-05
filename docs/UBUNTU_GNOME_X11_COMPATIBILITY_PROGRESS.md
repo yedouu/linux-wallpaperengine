@@ -568,8 +568,10 @@ RRCrtcChangeNotify
 | 壁纸循环切换 | ✅ | `--cycle` 每 `--cycle-interval` 秒准时切换，Win+D 期间不冻结 |
 | 点击穿透 | ✅ | XShape 空输入区域，桌面右键正常 |
 | 循环播放 | ✅ | `--cycle` + `--cycle-interval`，自动扫描 Workshop |
-| 崩溃黑名单 | ✅ | 记录到 `/tmp/lwe-failed`，重启自动跳过 |
+| 崩溃黑名单 | ✅ | 记录到 `/tmp/lwe-failed`，重启自动跳过（崩溃根因已修复，作防御保留） |
 | 全屏暂停 | ✅ | 跳过 `override_redirect` 窗口（mutter guard window）修复误判 |
+| Web 壁纸 | ⚠️ | CEF 初始化卡死，`--cycle` 自动跳过；显式指定仍卡（见 11.6.3） |
+| puppet 模型 | ⚠️ | 仅支持 MDLV0021/0023，Sea Train 挂环等 MDLV0013 渲染不完整（见 11.8） |
 | Alt+Tab 露原壁纸 | ⚠️ | GNOME compositor 限制，需 Shell Extension |
 | 视差效果 | ⚠️ | `XQueryPointer` 已就绪，需有 parallax 的壁纸验证 |
 | 托盘控制面板 | 🔴 | 线程安全问题暂停，后续重新设计 |
@@ -627,8 +629,43 @@ Scene、Video、窗口比例、运行时 resize、受控退出、预览窗口全
 - **现象**：`--cycle` 提前初始化后 `screenBackgrounds` 非空，GNOME 模式原有的 fit+border 默认缩放被跳过，壁纸用 `DefaultUVs` 渲染。
 - **修复**：GNOME X11 模式下对任何未显式指定缩放/clamp 的屏幕强制 `ZoomFitUVs + ClampUVsBorder`。
 
-### 11.6 实测环境
+### 11.6 运行期崩溃修复（2026-08-05 晚）
+
+`--cycle` 长跑（random 顺序、5-10 秒间隔）暴露了 3 个独立故障，均已定位并修复。
+
+**11.6.1 ScriptEngine 悬垂 album-art 监听器（SIGSEGV）**
+
+- **现象**：运行数分钟后进程 SIGSEGV。gdb 堆栈：`ScriptEngine::notifyMediaUpdate → VectorAdapter<3>::instantiate → ObjectAdapter::instantiate`，调用链从 `render() → DBusMediaSource::update() → fireAlbumArtListeners()`。
+- **根因**：`ScriptEngine` 构造函数注册两个监听器（metadata + album-art），析构只移除了 metadata 监听器，**漏掉 `m_unregisterAlbumArtUpdateCallback()`**。`ScriptEngine` 由 `CScene` 持有，每次切换壁纸（销毁旧 CScene）都会留下一个悬垂的 album-art 监听器。系统音乐/媒体信息变化（MPRIS）触发 `fireAlbumArtListeners()` 时调用悬垂 `this` → 崩溃。累积多个悬垂监听器后崩溃概率随切换次数增加。
+- **修复**：`ScriptEngine::~ScriptEngine()` 补调 `this->m_unregisterAlbumArtUpdateCallback ()`。
+
+**11.6.2 AlbumTexture::copyContents 空 GL 函数指针（SIGSEGV）**
+
+- **现象**：同上运行期 SIGSEGV，堆栈 `AlbumTexture::copyContents → TextureCache 监听器 lambda → fireAlbumArtListeners`。
+- **根因**：`copyContents()` 直接调用 `glGetnTexImage`（GL 4.3+ API），但 GLFW 请求的是 **GL 3.3 core** context，GLEW 不会加载该函数指针（null）。媒体信息更新触发专辑封面复制时调用空指针崩溃。项目其它 `glReadnPixels` 用法都有 `GLEW_VERSION_4_5` 检查并 fallback，唯独这里漏了。
+- **修复**：改用 GL 3.3 可用的 `glGetTexImage`（bufferSize 恰好为 RGBA 数据量）。
+
+**11.6.3 Web 壁纸触发 CEF 初始化卡死（死锁）**
+
+- **现象**：`--cycle` 切换到 Web 壁纸（如 1082586397）时主线程卡死。逐步加日志定位到 `ProjectParser::parse` 正常完成后 `setupBrowser()` 的 CEF 初始化，gdb 堆栈显示卡在动态链接器 `dlopen`（加载 libcef.so）。这是文档 5 节已知的 CEF 初始化问题。
+- **修复**：`Steam::FileSystem::listWorkshopWallpapers()` 跳过 `type == "web"` 的壁纸（日志 `Skipping web wallpaper ... (CEF not functional)`），`--cycle` 不再加载 Web 壁纸。显式指定 Web 壁纸仍会卡在 CEF 初始化（已知限制）。
+- 验证：过滤后 22 个壁纸，200 秒切换 39 次全部准时、无卡住、无崩溃。
+
+### 11.7 音频并发修复（防御性）
+
+- **`dequeuePacket` 无限等待**：`SDL audio_callback` 线程持 `m_streamListMutex` 遍历流时调用 `decodeFrame → dequeuePacket`，队列空时 `SDL_CondWait` 无限阻塞，主线程 `removeStream` 等同一把锁 → 死锁。改为**非阻塞**：队列空时 unref 残留包并返回，音频回调对无数据流直接跳过（填充静音），避免长时间持锁。
+- **`static int audio_pkt_size`**：`decodeFrame` 里是 static 局部变量，所有 `AudioStream` 实例共享 → 数据竞争/逻辑错误。改为成员变量 `m_audioPktSize`。
+- **`~AudioStream` 的 `SDL_CondWait`**：原实现未先 lock mutex 且无限等待，改为 `SDL_LockMutex` + `SDL_CondWaitTimeout(…, 100)`。
+- **`SDLAudioDriver::removeStream`**：原来无锁直接 `m_streams.erase()`，与音频回调遍历竞争；改为持 `m_streamListMutex`。
+
+### 11.8 挂环错位：puppet 模型格式限制（已知）
+
+- **现象**：Sea Train（3029316591）壁纸中扶手挂环（Handles）渲染不完整、部分出现在半空。
+- **根因**：挂环是 puppet 骨骼动画模型（`Handles 1/2_puppet.mdl`），格式为 `MDLV0013`。`CImage::loadPuppetMesh` 只支持 `MDLV0021/MDLV0023`，对 `MDLV0013` 打印 `Unsupported puppet model header` 并返回 false → 挂环网格不加载，回退基本四边形；叠加 `autosize: true`（上游未实现）与部分 shadow 对象负坐标 origin → 挂环不完整/悬空。
+- **状态**：上游 puppet 渲染支持限制，需逆向 `MDLV0013` 格式（大工程），暂不修复。
+
+### 11.9 实测环境（更新）
 
 - 桌面：GNOME Shell 42.9（X11），单显示器 2560x1440。
-- `--cycle` 扫描到 23 个 Workshop 壁纸，5 秒间隔下切换准时、进程存活、Win+D 期间不冻结。
+- `--cycle` 扫描到 22 个 Workshop 壁纸（过滤 Web 后），5 秒间隔下 200 秒切换 39 次准时、进程存活、无崩溃、无卡死。
 - 遗留：清理残留实例时发现多个 `--cycle` 测试进程可能残留，需用 `pkill -9 -f "output/linux-wallpaperengine"` 或按 PID 精确清理。

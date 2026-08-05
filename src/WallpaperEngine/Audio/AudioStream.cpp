@@ -151,8 +151,12 @@ AudioStream::~AudioStream () {
     this->m_audioThread = nullptr;
 
     if (this->m_queue != nullptr) {
-	// wait for the audio buffers to be done
-	SDL_CondWait (this->m_queue->wait, this->m_queue->mutex);
+	// wait for the audio buffers to be done. Lock the queue mutex first
+	// (SDL_CondWait* requires it) and use a timeout so a paused audio
+	// callback can't deadlock a wallpaper switch forever.
+	SDL_LockMutex (this->m_queue->mutex);
+	SDL_CondWaitTimeout (this->m_queue->wait, this->m_queue->mutex, 100);
+	SDL_UnlockMutex (this->m_queue->mutex);
     }
 
     if (this->m_swrctx != nullptr && swr_is_initialized (this->m_swrctx) == true) {
@@ -372,31 +376,33 @@ void AudioStream::dequeuePacket () {
 
     SDL_LockMutex (this->m_queue->mutex);
 
-    while (this->m_audioContext.getApplicationContext ().state.general.keepRunning) {
-#if FF_API_FIFO_OLD_API
-	int ret = -1;
+    int ret = -1;
 
-	if (av_fifo_size (this->m_queue->packetList) >= static_cast<int> (sizeof (entry))) {
-	    ret = av_fifo_generic_read (this->m_queue->packetList, &entry, sizeof (entry), nullptr);
-	}
+#if FF_API_FIFO_OLD_API
+    if (av_fifo_size (this->m_queue->packetList) >= static_cast<int> (sizeof (entry))) {
+	ret = av_fifo_generic_read (this->m_queue->packetList, &entry, sizeof (entry), nullptr);
+    }
 #else
-	const int ret = av_fifo_read (this->m_queue->packetList, &entry, 1);
+    ret = av_fifo_read (this->m_queue->packetList, &entry, 1);
 #endif
 
-	// enough data available, read it
-	if (ret >= 0) {
-	    this->m_queue->nb_packets--;
-	    this->m_queue->size -= entry.packet->size + sizeof (entry);
-	    this->m_queue->duration -= entry.packet->duration;
+    // enough data available, read it
+    if (ret >= 0) {
+	this->m_queue->nb_packets--;
+	this->m_queue->size -= entry.packet->size + sizeof (entry);
+	this->m_queue->duration -= entry.packet->duration;
 
-	    // move the reference and free the old one
-	    av_packet_move_ref (this->m_decodePacket, entry.packet);
-	    av_packet_free (&entry.packet);
-	    break;
+	// move the reference and free the old one
+	av_packet_move_ref (this->m_decodePacket, entry.packet);
+	av_packet_free (&entry.packet);
+    } else {
+	// Queue empty: don't block. decodeFrame is called from the SDL audio
+	// callback while it holds the stream list mutex; waiting for data here
+	// would deadlock a wallpaper switch that needs to erase this stream.
+	// Clear any leftover packet so the caller treats this as silence.
+	if (this->m_decodePacket->data != nullptr) {
+	    av_packet_unref (this->m_decodePacket);
 	}
-
-	// make the thread wait if nothing was available
-	SDL_CondWait (this->m_queue->cond, this->m_queue->mutex);
     }
 
     SDL_UnlockMutex (this->m_queue->mutex);
@@ -567,56 +573,60 @@ int AudioStream::resampleAudio (uint8_t* out_buf, const int out_size) {
 }
 
 int AudioStream::decodeFrame (uint8_t* audioBuffer, const int bufferSize) {
-    static int audio_pkt_size = 0;
+    // Decode as much of the current packet as needed. Bounded by the per
+    // instance packet size (not a shared static) and by the stream's own
+    // initialized flag, so a stopped/erased stream returns silence instead
+    // of blocking the SDL audio callback.
+    while (this->m_audioPktSize > 0 && this->isInitialized ()) {
+	int got_frame = 0;
+	int ret = avcodec_receive_frame (this->getContext (), this->m_decodeFrame);
 
-    // block until there's any data in the buffers
-    while (this->m_audioContext.getApplicationContext ().state.general.keepRunning) {
-	while (audio_pkt_size > 0 && this->m_audioContext.getApplicationContext ().state.general.keepRunning) {
-	    int got_frame = 0;
-	    int ret = avcodec_receive_frame (this->getContext (), this->m_decodeFrame);
-
-	    if (ret == 0) {
-		got_frame = 1;
-	    }
-	    if (ret == AVERROR (EAGAIN)) {
-		ret = 0;
-	    }
-	    if (ret == 0) {
-		ret = avcodec_send_packet (this->getContext (), this->m_decodePacket);
-	    }
-	    if (ret < 0 && ret != AVERROR (EAGAIN)) {
-		return -1;
-	    }
-
-	    if (this->m_decodePacket->size < 0) {
-		// if error, skip frame
-		audio_pkt_size = 0;
-		break;
-	    }
-
-	    audio_pkt_size -= this->m_decodePacket->size;
-	    int data_size = 0;
-
-	    if (got_frame) {
-		// audio resampling
-		data_size = this->resampleAudio (audioBuffer, bufferSize);
-	    }
-	    if (data_size <= 0) {
-		// no data found, keep waiting
-		continue;
-	    }
-	    // some data was found
-	    return data_size;
+	if (ret == 0) {
+	    got_frame = 1;
+	}
+	if (ret == AVERROR (EAGAIN)) {
+	    ret = 0;
+	}
+	if (ret == 0) {
+	    ret = avcodec_send_packet (this->getContext (), this->m_decodePacket);
+	}
+	if (ret < 0 && ret != AVERROR (EAGAIN)) {
+	    return -1;
 	}
 
-	if (this->m_decodePacket->data) {
-	    av_packet_unref (this->m_decodePacket);
+	if (this->m_decodePacket->size < 0) {
+	    // if error, skip frame
+	    this->m_audioPktSize = 0;
+	    break;
 	}
 
-	this->dequeuePacket ();
+	this->m_audioPktSize -= this->m_decodePacket->size;
+	int data_size = 0;
 
-	audio_pkt_size = this->m_decodePacket->size;
+	if (got_frame) {
+	    // audio resampling
+	    data_size = this->resampleAudio (audioBuffer, bufferSize);
+	}
+	if (data_size <= 0) {
+	    // no data found, keep waiting
+	    continue;
+	}
+	// some data was found
+	return data_size;
     }
+
+    if (!this->isInitialized ()) {
+	return 0;
+    }
+
+    // current packet exhausted, try to fetch a new one (non-blocking)
+    if (this->m_decodePacket->data) {
+	av_packet_unref (this->m_decodePacket);
+    }
+
+    this->dequeuePacket ();
+
+    this->m_audioPktSize = this->m_decodePacket->size;
 
     return 0;
 }

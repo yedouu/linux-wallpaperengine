@@ -44,6 +44,12 @@ void audio_callback (void* userdata, uint8_t* streamData, int length) {
 		    // fallback for errors, silence
 		    buffer->audio_buf_size = 1024;
 		    memset (buffer->audio_buf, 0, buffer->audio_buf_size);
+		} else if (audio_size == 0) {
+		    // No audio data available right now (queue empty). Stop mixing
+		    // this stream so the callback doesn't spin; the next callback
+		    // will retry. This also keeps the stream list mutex held only
+		    // briefly, so a wallpaper switch can't deadlock on it.
+		    break;
 		} else {
 		    buffer->audio_buf_size = audio_size;
 		}
@@ -130,7 +136,13 @@ int SDLAudioDriver::addStream (AudioStream* stream) {
 
     return newStreamId;
 }
-void SDLAudioDriver::removeStream (int streamId) { this->m_streams.erase (streamId); }
+void SDLAudioDriver::removeStream (int streamId) {
+    // The audio callback thread walks this map while holding the stream
+    // mutex, so erasing must be serialized against it too.
+    SDL_LockMutex (this->m_streamListMutex);
+    this->m_streams.erase (streamId);
+    SDL_UnlockMutex (this->m_streamListMutex);
+}
 
 const std::map<int, SDLAudioBuffer*>& SDLAudioDriver::getStreams () { return this->m_streams; }
 

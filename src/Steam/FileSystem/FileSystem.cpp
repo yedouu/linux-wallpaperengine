@@ -96,6 +96,14 @@ std::vector<Steam::FileSystem::WorkshopItem> Steam::FileSystem::listWorkshopWall
 		item.type = json.optional<std::string> ("type", "scene");
 		item.title = json.optional<std::string> ("title", item.id);
 
+		// Web wallpapers require CEF, whose initialization is not functional
+		// yet (see UBUNTU_GNOME_X11_COMPATIBILITY_PROGRESS.md). Including them
+		// in the cycle would stall the main thread while CEF loads, so skip.
+		if (item.type == "web") {
+		    sLog.out ("Skipping web wallpaper ", item.title, " (CEF not functional)");
+		    continue;
+		}
+
 		result.push_back (std::move (item));
 	    } catch (const std::exception& e) {
 		sLog.error ("Skipping ", entry.path ().string (), ": ", e.what ());

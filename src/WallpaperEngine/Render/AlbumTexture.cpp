@@ -73,9 +73,12 @@ void AlbumTexture::copyContents (const TextureProvider& other) const noexcept {
 
     uint8_t* buffer = new uint8_t[bufferSize];
 
-    // Read the source texture
+    // Read the source texture. glGetnTexImage requires GL 4.3+, but the
+    // GLFW context is requested as 3.3 (so GLEW's glGetnTexImage pointer
+    // stays null and calling it would crash). glGetTexImage is available in
+    // every 3.3 context; bufferSize is already exact for the RGBA data.
     glBindTexture (GL_TEXTURE_2D, other.getTextureID (0));
-    glGetnTexImage (GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, bufferSize, buffer);
+    glGetTexImage (GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, buffer);
 
     // Upload into another texture
     glBindTexture (GL_TEXTURE_2D, this->m_textureID);

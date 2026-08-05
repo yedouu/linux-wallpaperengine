@@ -250,6 +250,11 @@ ScriptEngine::ScriptEngine (Wallpapers::CScene& scene, Media::MediaSource& media
 
 ScriptEngine::~ScriptEngine () {
     this->m_unregisterMediaUpdateCallback ();
+    // The album-art listener must be unregistered too, otherwise it keeps a
+    // dangling `this` in MediaSource after this ScriptEngine (owned by the
+    // scene) is destroyed on a wallpaper switch. The next media update then
+    // calls into freed memory and crashes.
+    this->m_unregisterAlbumArtUpdateCallback ();
 
     for (const auto& module : this->m_scriptModules | std::views::values) {
 	JS_FreeValue (this->m_context, module.module);
