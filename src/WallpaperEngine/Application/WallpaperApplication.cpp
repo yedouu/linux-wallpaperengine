@@ -80,10 +80,10 @@ void CustomGLDebugCallback (
 
 WallpaperApplication::WallpaperApplication (ApplicationContext& context) : m_context (context) {
     this->initializeSubsystems ();
+    this->initializePlaylists ();
     this->loadBackgrounds ();
     this->setupProperties ();
     this->setupBrowser ();
-    this->initializePlaylists ();
 }
 
 void WallpaperApplication::initializeSubsystems () {
@@ -218,10 +218,23 @@ void WallpaperApplication::loadBackgrounds () {
 		&& this->m_context.settings.general.screenBackgrounds.empty ()) {
 		this->m_context.settings.general.screenBackgrounds["default"]
 			= this->m_context.settings.general.defaultBackground;
-		this->m_context.settings.general.screenScalings["default"]
-			= WallpaperEngine::Render::WallpaperState::TextureUVsScaling::ZoomFitUVs;
-		this->m_context.settings.general.screenClamps["default"]
-			= TextureFlags_ClampUVsBorder;
+    }
+
+    // GNOME X11 desktop mode: default to fit+border for any screen that
+    // doesn't already have an explicit scaling or clamp setting. This
+    // includes screens populated by --cycle/initializePlaylists above.
+    if (this->m_context.settings.render.mode == ApplicationContext::GNOME_X11_DESKTOP_WINDOW) {
+	for (const auto& [screen, _] : this->m_context.settings.general.screenBackgrounds) {
+	    if (screen.rfind ("span:", 0) == 0) continue;
+	    if (!this->m_context.settings.general.screenScalings.contains (screen)) {
+		this->m_context.settings.general.screenScalings[screen]
+		    = WallpaperEngine::Render::WallpaperState::TextureUVsScaling::ZoomFitUVs;
+	    }
+	    if (!this->m_context.settings.general.screenClamps.contains (screen)) {
+		this->m_context.settings.general.screenClamps[screen]
+		    = TextureFlags_ClampUVsBorder;
+	    }
+	}
     }
 
     for (const auto& [screen, path] : this->m_context.settings.general.screenBackgrounds) {
@@ -545,6 +558,7 @@ void WallpaperApplication::advancePlaylist (
 
 	this->m_context.settings.general.screenBackgrounds[screen] = nextPath;
 	loaded = true;
+	sLog.out ("Playlist advanced on ", screen, " -> ", nextPath.filename ().string ());
     } catch (const std::exception& e) {
 	sLog.error ("Failed to advance playlist on ", screen, ": ", e.what ());
     }

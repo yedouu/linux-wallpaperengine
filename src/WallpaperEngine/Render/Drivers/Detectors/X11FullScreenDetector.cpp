@@ -1,6 +1,7 @@
 #include "X11FullScreenDetector.h"
 #include "WallpaperEngine/Logging/Log.h"
 
+#include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrandr.h>
 
@@ -117,6 +118,48 @@ bool X11FullScreenDetector::anythingFullscreen () const {
 
 	if (attribs.map_state != IsViewable) {
 	    continue;
+	}
+
+	// Skip override-redirect windows — these are compositor/dock/OSD
+	// surfaces (e.g. Mutter's guard window which covers the whole screen),
+	// not WM-managed fullscreen apps. Real fullscreen apps are reparented
+	// by the WM and never carry override_redirect.
+	if (attribs.override_redirect) {
+	    continue;
+	}
+
+	// Skip desktop and dock windows — they always match screen geometry
+	// but are not "fullscreen" apps in the user-facing sense.
+	{
+	    Atom actualType;
+	    int actualFormat;
+	    unsigned long nItems, bytesAfter;
+	    unsigned char* propData = nullptr;
+	    const Atom netWmWindowType
+		= XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE", False);
+	    const Atom netWmWindowTypeDesktop
+		= XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE_DESKTOP", False);
+	    const Atom netWmWindowTypeDock
+		= XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE_DOCK", False);
+
+	    if (XGetWindowProperty (this->m_display, children[i], netWmWindowType,
+				    0, 64, False, XA_ATOM, &actualType, &actualFormat,
+				    &nItems, &bytesAfter, &propData) == Success
+		&& propData != nullptr) {
+		const auto* atoms = reinterpret_cast<Atom*> (propData);
+		bool isDesktopOrDock = false;
+		for (unsigned long j = 0; j < nItems; j++) {
+		    if (atoms[j] == netWmWindowTypeDesktop
+			|| atoms[j] == netWmWindowTypeDock) {
+			isDesktopOrDock = true;
+			break;
+		    }
+		}
+		XFree (propData);
+		if (isDesktopOrDock) {
+		    continue;
+		}
+	    }
 	}
 
 	// compare width and height with the different screens we have

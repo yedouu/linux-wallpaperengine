@@ -70,22 +70,44 @@ void GNOMEX11WindowOutput::updateRender () const {
 	this->m_fullWidth  = glfwDriver.getFramebufferSize ().x;
 	this->m_fullHeight = glfwDriver.getFramebufferSize ().y;
 
+	// Recover from Show Desktop (Win+D) regardless of framebuffer size.
+	this->ensureVisible ();
 
-		// Recover from Show Desktop (Win+D): Mutter minimizes NORMAL-type
-		// windows, so re-map ours if it disappeared.
-		if (this->m_x11Window != None) {
-			XWindowAttributes attrs;
-			if (XGetWindowAttributes (this->m_display, this->m_x11Window, &attrs)
-				&& attrs.map_state == IsUnmapped) {
-				XMapWindow (this->m_display, this->m_x11Window);
-				XLowerWindow (this->m_display, this->m_x11Window);
-			}
-		}
+	// Skip viewport remapping while the window is hidden/iconified
+	// (framebuffer is 0) — keep the last valid viewport instead.
+	if (this->m_fullWidth <= 0 || this->m_fullHeight <= 0) {
+		return;
+	}
+
 	// Re-map the default viewport to cover the current framebuffer.
 	auto vpIt = this->m_viewports.find ("default");
 	if (vpIt != this->m_viewports.end ()) {
 		vpIt->second->viewport    = {0, 0, this->m_fullWidth, this->m_fullHeight};
 		vpIt->second->logicalSize = {this->m_fullWidth, this->m_fullHeight};
+	}
+}
+
+void GNOMEX11WindowOutput::ensureVisible () const {
+	if (this->m_x11Window == None || this->m_display == nullptr) {
+		return;
+	}
+
+	XWindowAttributes attrs;
+	if (XGetWindowAttributes (this->m_display, this->m_x11Window, &attrs)
+		&& attrs.map_state == IsUnmapped) {
+		// GLFW marks the window iconified on UnmapNotify and reports a 0
+		// framebuffer while iconified, which stops rendering. Tell GLFW to
+		// restore the window so its internal state (and framebuffer size)
+		// sync back up, in addition to forcing the X11 map.
+		auto& glfwDriver = dynamic_cast<GLFWOpenGLDriver&> (this->m_driver);
+		GLFWwindow* glfwWindow = glfwDriver.getWindow ();
+		if (glfwWindow != nullptr) {
+			glfwRestoreWindow (glfwWindow);
+		}
+
+		XMapWindow (this->m_display, this->m_x11Window);
+		XLowerWindow (this->m_display, this->m_x11Window);
+		XFlush (this->m_display);
 	}
 }
 
@@ -167,6 +189,10 @@ void GNOMEX11WindowOutput::configureDesktopWindow () {
 		XLowerWindow (this->m_display, this->m_x11Window);
 		XFlush (this->m_display);
 
+		// Let GLFW process the ConfigureNotify from XMoveResizeWindow so the
+		// framebuffer size is correct before the first render frame.
+		glfwPollEvents ();
+
 		// Empty input shape — click events pass through to desktop.
 		XRectangle dummy;
 		XShapeCombineRectangles (this->m_display, this->m_x11Window,
@@ -185,8 +211,10 @@ void GNOMEX11WindowOutput::setupEWMHProperties () {
 	Atom net_wm_state_sticky  = XInternAtom (this->m_display, "_NET_WM_STATE_STICKY",  False);
 	Atom net_wm_skip_taskbar  = XInternAtom (this->m_display, "_NET_WM_STATE_SKIP_TASKBAR", False);
 	Atom net_wm_skip_pager    = XInternAtom (this->m_display, "_NET_WM_STATE_SKIP_PAGER",   False);
+	Atom net_wm_state_below   = XInternAtom (this->m_display, "_NET_WM_STATE_BELOW",   False);
 
 	Atom states[] = {
+		net_wm_state_below,
 		net_wm_state_sticky,
 		net_wm_skip_taskbar,
 		net_wm_skip_pager,
@@ -202,13 +230,19 @@ void GNOMEX11WindowOutput::setupEWMHProperties () {
 
 
 
-		// _NET_WM_WINDOW_TYPE_DESKTOP — survive Show Desktop (Win+D).
-		Atom net_wm_window_type = XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE", False);
-		Atom net_wm_window_type_desktop = XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE_DESKTOP", False);
-		XChangeProperty (this->m_display, this->m_x11Window,
-		                net_wm_window_type, XA_ATOM, 32,
-		                PropModeReplace,
-		                reinterpret_cast<unsigned char*> (&net_wm_window_type_desktop), 1);
+		// _NET_WM_WINDOW_TYPE_DOCK: unlike DESKTOP (hidden behind GNOME's
+		// background layer) DOCK windows are visible above the background and
+		// are exempt from "Show Desktop" (Win+D) minimization. Combined with
+		// _NET_WM_STATE_BELOW and XLowerWindow, the window stays stacked below
+		// normal application windows.
+		Atom net_wm_window_type      = XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE",      False);
+		Atom net_wm_window_type_dock = XInternAtom (this->m_display, "_NET_WM_WINDOW_TYPE_DOCK", False);
+		XChangeProperty (
+			this->m_display, this->m_x11Window,
+			net_wm_window_type, XA_ATOM, 32,
+			PropModeReplace,
+			reinterpret_cast<unsigned char*> (&net_wm_window_type_dock), 1
+		);
 	// _NET_WM_DESKTOP = 0xFFFFFFFF → visible on all desktops / workspaces.
 	Atom net_wm_desktop = XInternAtom (this->m_display, "_NET_WM_DESKTOP", False);
 	long desktopAll = 0xFFFFFFFF;

@@ -43,6 +43,13 @@ public:
 	 */
 	void configureDesktopWindow ();
 
+	/**
+	 * Re-map the desktop window if GNOME's "Show Desktop" (Win+D) unmapped
+	 * it.  Independent of framebuffer size so it also runs while the window
+	 * is hidden/iconified (framebuffer is 0 in that state).
+	 */
+	void ensureVisible () const;
+
 private:
 	/** Open X11 display and query XRandR outputs. */
 	void discoverOutputs ();

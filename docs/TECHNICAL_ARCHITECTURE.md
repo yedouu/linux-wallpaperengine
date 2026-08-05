@@ -79,7 +79,7 @@ main.cpp
 | `NORMAL_WINDOW` | 0 | 默认 | `GLFWWindowOutput` | 可缩放、带装饰的预览窗口 |
 | `DESKTOP_BACKGROUND` | 1 | `--screen-root` | `X11Output`（X11）或 Wayland Layer Shell | 桌面背景（写 X11 根窗口 Pixmap 或 wlr-layer） |
 | `EXPLICIT_WINDOW` | 2 | `--window XxYxWxH` | `GLFWWindowOutput` | 固定几何位置的无边框置顶预览窗口 |
-| `GNOME_X11_DESKTOP_WINDOW` | 3 | `--gnome-x11` | `GLFWWindowOutput`（当前），后续替换为 `GNOMEX11WindowOutput` | GNOME X11 原生桌面窗口（Managed Window 层级） |
+| `GNOME_X11_DESKTOP_WINDOW` | 3 | `--gnome-x11` | `GNOMEX11WindowOutput` | GNOME X11 原生桌面窗口（DOCK 类型，Managed Window 层级） |
 
 ### 4.1 模式驱动的路由机制
 
@@ -101,7 +101,7 @@ VideoFactories (驱动工厂)
     │
     └── GNOME_X11_DESKTOP_WINDOW
         └── lookup key: XDG_SESSION_TYPE
-            └── "x11"     → GLFWOpenGLDriver → GLFWWindowOutput (→ GNOMEX11WindowOutput)
+            └── "x11"     → GLFWOpenGLDriver → GNOMEX11WindowOutput
 ```
 
 ### 4.2 模式在关键路径中的行为差异
@@ -127,7 +127,7 @@ Output (基类)
 ├── X11Output                # 用于 DESKTOP_BACKGROUND + X11
 │   └── X11OutputViewport    # X11 屏幕视口（写根窗口 Pixmap）
 └── GNOMEX11WindowOutput     # 用于 GNOME_X11_DESKTOP_WINDOW
-    └── GLFWOutputViewport   # 通过 EWMH 属性实现桌面窗口层级
+    └── GLFWOutputViewport   # EWMH: DOCK 类型 + BELOW/STICKY/SKIP + XShape 穿透
 ```
 
 ## 6. 渲染管线（简化）
@@ -180,7 +180,7 @@ dispatchEventQueue()  # 事件 + 渲染 + buffer 交换（暂停时跳过）
 | CEF 纹理目标修复 | ✅ | framebuffer ID → 纹理 ID |
 | **步骤 1：新模式和 CLI** | ✅ | `GNOME_X11_DESKTOP_WINDOW` + `--gnome-x11` |
 | **步骤 2：事件循环拆分** | ✅ | `pumpEvents()` 纯虚方法，暂停时窗口保持响应 |
-| **步骤 3：GNOMEX11WindowOutput** | ✅ | EWMH DESKTOP/sticky/skip-taskbar/skip-pager, XRandR bounding box |
+| **步骤 3：GNOMEX11WindowOutput** | ✅ | EWMH DOCK/BELOW/sticky/skip-taskbar/skip-pager, XRandR bounding box |
 | Alt+Tab 兼容性 | ⚠️ | GNOME compositor 限制：切换时短暂露原壁纸，需 Shell Extension |
 | 壁纸循环播放 | ✅ | `--cycle` + `--cycle-interval`，扫描 Workshop 自动轮播 |
 | 步骤 4：点击穿透 | ✅ | XShape 空输入区域，XQueryPointer 全局鼠标位置 |

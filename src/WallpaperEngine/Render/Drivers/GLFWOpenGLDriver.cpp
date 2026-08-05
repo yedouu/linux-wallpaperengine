@@ -128,12 +128,18 @@ void GLFWOpenGLDriver::pumpEvents () {
 
 	// Track framebuffer dimensions for window modes so that resize events
 	// during pause update the stored viewport size before the next frame.
+	// GNOME desktop mode also calls updateRender while hidden/iconified so
+	// the Win+D recovery path (ensureVisible) runs even with a 0 framebuffer.
 	if (this->m_context.settings.render.mode == ApplicationContext::NORMAL_WINDOW
 		|| this->m_context.settings.render.mode == ApplicationContext::EXPLICIT_WINDOW
 		|| this->m_context.settings.render.mode == ApplicationContext::GNOME_X11_DESKTOP_WINDOW) {
-		const auto fbSize = this->getFramebufferSize ();
-		if (fbSize.x > 0 && fbSize.y > 0) {
+		if (this->m_context.settings.render.mode == ApplicationContext::GNOME_X11_DESKTOP_WINDOW) {
 			this->m_output->updateRender ();
+		} else {
+			const auto fbSize = this->getFramebufferSize ();
+			if (fbSize.x > 0 && fbSize.y > 0) {
+				this->m_output->updateRender ();
+			}
 		}
 	}
 }

@@ -236,9 +236,11 @@ cc1plus: note: unrecognized command-line option '-Wno-undefined-var-template'
 
 状态：**已确认根因，暂不修复**
 
-现象：使用 `_NET_WM_WINDOW_TYPE_DESKTOP` 类型时，Alt+Tab 切换窗口期间 Shell compositor 会隐藏所有 DESKTOP 层窗口，露出 nautilus 的原壁纸层。
+现象：当前使用 `_NET_WM_WINDOW_TYPE_DOCK` 类型。Alt+Tab 切换窗口期间 Shell compositor 可能短暂露出底层背景（DOCK 窗口虽不在 Alt+Tab 列表，但切换动画期间合成器行为受版本影响）。
 
-根因：这是 GNOME Shell compositor 的硬编码行为——切换模式下 DESKTOP 类型窗口被整体隐藏，应用进程无法通过 X11 窗口属性绕开。
+历史注记：早期曾使用 `_NET_WM_WINDOW_TYPE_DESKTOP`，该类型在 GNOME 42 下会被 Shell 背景层完全盖住（黑屏），且 Alt+Tab 切换时被整体隐藏，已弃用（见 11.4 节）。
+
+根因：这是 GNOME Shell compositor 的硬编码行为——切换模式下部分底层窗口被整体隐藏，应用进程无法通过 X11 窗口属性完全绕开。
 
 可行修复方案：编写 GNOME Shell Extension，在 Shell 进程内部拦截切换事件，但技术代价大（JS 技术栈分离、Shell 版本耦合、额外部署步骤），当前优先推进核心桌面功能，后续再考虑用小扩展精细打磨。
 
@@ -436,11 +438,13 @@ _NET_WM_STATE_SKIP_PAGER
 _NET_WM_DESKTOP = 0xFFFFFFFF
 ```
 
-同时设置 `WM_HINTS.input = false`，并调用 `XLowerWindow()`。不要在第一版使用 `_NET_WM_WINDOW_TYPE_DESKTOP`；只有实际测试证明普通 managed window 无法保持正确层级时，再单独比较该类型。
+同时设置 `WM_HINTS.input = false`，并调用 `XLowerWindow()`。
+
+窗口类型采用 **`_NET_WM_WINDOW_TYPE_DOCK`**（2026-08-05 定案，见 11.4 节）：DOCK 窗口可见于 GNOME 背景之上、免疫 Show Desktop（Win+D 不消失），配合 `_NET_WM_STATE_BELOW` 和 `XLowerWindow` 保持在普通应用之下。不采用 `_NET_WM_WINDOW_TYPE_DESKTOP`（被背景层盖住导致黑屏，已实验确认无法突破）。
 
 第一版先使用当前活动显示器或 XRandR 虚拟桌面边界作为窗口几何，不处理热插拔。
 
-验收标准：窗口显示在 GNOME 背景之上、普通应用之下；不出现在任务栏、分页器和 Alt+Tab；显示时不抢焦点。
+验收标准：窗口显示在 GNOME 背景之上、普通应用之下；不出现在任务栏、分页器和 Alt+Tab；显示时不抢焦点；Win+D 后壁纸保持显示。
 
 ### 8.5 步骤 4：点击穿透和全局鼠标位置
 
@@ -560,17 +564,71 @@ RRCrtcChangeNotify
 | 功能 | 状态 | 说明 |
 |------|:---:|------|
 | GNOME X11 桌面窗口 | ✅ | 全屏、置底、不抢焦点、Alt+Tab不出现在列表 |
-| Win+D 不消失 | ✅ | `_NET_WM_WINDOW_TYPE_DESKTOP` |
+| Win+D 不消失 | ✅ | `_NET_WM_WINDOW_TYPE_DOCK` + `_NET_WM_STATE_BELOW`（详见 11 节） |
+| 壁纸循环切换 | ✅ | `--cycle` 每 `--cycle-interval` 秒准时切换，Win+D 期间不冻结 |
 | 点击穿透 | ✅ | XShape 空输入区域，桌面右键正常 |
 | 循环播放 | ✅ | `--cycle` + `--cycle-interval`，自动扫描 Workshop |
 | 崩溃黑名单 | ✅ | 记录到 `/tmp/lwe-failed`，重启自动跳过 |
-| 全屏暂停 | ⚠️ | `--no-fullscreen-pause` 避免把自己判为全屏 |
+| 全屏暂停 | ✅ | 跳过 `override_redirect` 窗口（mutter guard window）修复误判 |
 | Alt+Tab 露原壁纸 | ⚠️ | GNOME compositor 限制，需 Shell Extension |
 | 视差效果 | ⚠️ | `XQueryPointer` 已就绪，需有 parallax 的壁纸验证 |
 | 托盘控制面板 | 🔴 | 线程安全问题暂停，后续重新设计 |
 
 ## 10. 下一步建议
 
-Scene、Video、窗口比例、运行时 resize、受控退出和预览窗口全屏误暂停已经完成本机验证；Web/CEF 初始化仍有问题，但用户使用频率低，不作为 GNOME X11 桌面模式的前置条件。长时间资源占用和更多全屏组合测试暂后置。
+Scene、Video、窗口比例、运行时 resize、受控退出、预览窗口全屏误暂停和 `--cycle` 切换已经完成本机验证；Web/CEF 初始化仍有问题，但用户使用频率低，不作为 GNOME X11 桌面模式的前置条件。长时间资源占用和更多全屏组合测试暂后置。
 
-下一项开发工作应严格从 **8.2 步骤 1** 开始：新增 `GNOME_X11_DESKTOP_WINDOW` 和 `--gnome-x11`，只建立独立模式及 factory 路由，不在同一个提交中同时加入 EWMH、多显示器或服务化。模式骨架验证后，再执行 **8.3 步骤 2** 的事件循环拆分。
+已完成步骤 1-4 和桌面集成修复后，后续按顺序推进：
+
+1. **步骤 5**：单显示器桌面验收（层级、焦点、锁屏、Ctrl+C 干净退出）。
+2. **步骤 6**：单窗口多显示器 viewport（XRandR 包围盒 + 每屏独立壁纸/span）。
+3. **步骤 7**：XRandR 热插拔（`RRScreenChangeNotify` / `RROutputChangeNotify`）。
+4. **步骤 8**：桌面模式全屏暂停优化（读取 `_NET_WM_STATE_FULLSCREEN` 而非几何匹配）。
+5. **步骤 9**：systemd 用户服务 + 结构化配置（JSON/INI），不用 `pkill` 管理生命周期。
+6. **步骤 10**：GUI 和壁纸管理；Web/CEF 支持给出明确状态。
+
+## 11. 2026-08-05 桌面集成修复记录
+
+本轮在真实 GNOME 42 X11 桌面完成 `--cycle` 循环模式的完整实测，修复了以下问题：
+
+### 11.1 `--cycle` 启动崩溃（filesystem error）
+
+- **现象**：`--gnome-x11 --cycle` 启动即报 `The specified mount cannot be handled by any of the filesystem adapters`。
+- **根因**：`WallpaperApplication` 构造函数先执行 `loadBackgrounds()` 后执行 `initializePlaylists()`。`--cycle` 未指定壁纸时 `defaultBackground` 为空，`setupAssetLocator("")` 尝试挂载空路径失败。
+- **修复**：将 `initializePlaylists()` 提前到 `loadBackgrounds()` 之前，cycle 模式先扫描 Workshop 并设置 `defaultBackground`，随后加载正常。
+
+### 11.2 首帧拖影
+
+- **现象**：壁纸窗口下方出现未初始化拖影。
+- **根因**：`configureDesktopWindow()` 用 `XMoveResizeWindow` 把 640x480 的 GLFW 窗口直接拉到桌面尺寸，但 GLFW 未收到 `ConfigureNotify`，framebuffer 仍是 640x480，`glClear` 只清除了左上角。
+- **修复**：`XFlush` 后调用 `glfwPollEvents()`，让 GLFW 在首帧渲染前同步 framebuffer 尺寸。
+
+### 11.3 壁纸不切换 + 动态壁纸不动的根因：mutter guard window 误判全屏
+
+- **现象**：循环模式下壁纸既不切换、画面也不动。
+- **根因**：Mutter 合成器有一个全屏守护窗口 `"mutter guard window"`（`override_redirect=1`，尺寸等于屏幕），`X11FullScreenDetector::anythingFullscreen()` 把它判为"全屏应用"，壁纸永久进入暂停分支（mpv 暂停 + `updatePlaylists()` 不执行）。
+- **修复**：`anythingFullscreen()` 跳过所有 `override_redirect` 窗口（合成器/OSD 特征；真正的全屏应用受 WM 管理，不会是 override_redirect），同时保留对 `_NET_WM_WINDOW_TYPE_DESKTOP` / `DOCK` 的跳过。
+
+### 11.4 Win+D 壁纸消失：DESKTOP 类型两难与 DOCK 类型方案
+
+- **现象**：按 Win+D 后壁纸窗口消失，且切换严重延迟（5 秒间隔变成 15 秒+）。
+- **根因**：GNOME 42 的 Show Desktop 会最小化所有非 DOCK/DESKTOP 窗口。`_NET_WM_WINDOW_TYPE_BELOW` 的普通窗口被持续 unmap，`ensureVisible()` 每帧恢复又被打回，窗口在 map/unmap 间抖动、framebuffer 为 0，渲染冻结。
+- **窗口类型穷举实验**（Xlib 实测采样根窗口像素）：
+  | 类型 | 可见性 | Win+D | 结论 |
+  |------|--------|-------|------|
+  | `_NET_WM_WINDOW_TYPE_DESKTOP` | ❌ 被 GNOME 背景层完全盖住（黑屏，XMapRaised/XRaiseWindow 均无法突破） | ✅ 不消失 | 不可行 |
+  | `_NET_WM_WINDOW_TYPE_BELOW`（普通） | ✅ 可见 | ❌ 被最小化 + 渲染冻结 | 不可行 |
+  | **`_NET_WM_WINDOW_TYPE_DOCK` + `BELOW`** | ✅ 可见 | ✅ **不消失** | ✅ **采用** |
+- **验证**：DOCK 窗口位于 `_NET_CLIENT_LIST_STACKING` 底部（普通应用之下，不遮挡 Clash/终端），可见且免疫 Show Desktop。Win+D 后窗口 `map_state=2` 保持 viewable，切换每 5 秒准时。
+- **修复**：`setupEWMHProperties()` 设置 `_NET_WM_WINDOW_TYPE_DOCK`，配合已有的 `_NET_WM_STATE_BELOW/STICKY/SKIP_TASKBAR/SKIP_PAGER` 与 `XLowerWindow`。
+
+### 11.5 GNOME X11 模式缩放默认值
+
+- **现象**：`--cycle` 提前初始化后 `screenBackgrounds` 非空，GNOME 模式原有的 fit+border 默认缩放被跳过，壁纸用 `DefaultUVs` 渲染。
+- **修复**：GNOME X11 模式下对任何未显式指定缩放/clamp 的屏幕强制 `ZoomFitUVs + ClampUVsBorder`。
+
+### 11.6 实测环境
+
+- 桌面：GNOME Shell 42.9（X11），单显示器 2560x1440。
+- `--cycle` 扫描到 23 个 Workshop 壁纸，5 秒间隔下切换准时、进程存活、Win+D 期间不冻结。
+- 遗留：清理残留实例时发现多个 `--cycle` 测试进程可能残留，需用 `pkill -9 -f "output/linux-wallpaperengine"` 或按 PID 精确清理。
