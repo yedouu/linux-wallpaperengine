@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.12)
 project(linux-wallpaperengine)
 
+include(CTest)
+
 # prevent installing to /usr by default so we don't bork anything
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     set(CMAKE_INSTALL_PREFIX "/opt/${PROJECT_NAME}" CACHE PATH "..." FORCE)
@@ -124,6 +126,12 @@ list(REMOVE_ITEM CEF_CXX_COMPILER_FLAGS -fno-rtti)
 list(REMOVE_ITEM CEF_CXX_COMPILER_FLAGS -std=c++17)
 list(REMOVE_ITEM CEF_COMPILER_FLAGS -fvisibility=hidden)
 list(REMOVE_ITEM CEF_COMPILER_FLAGS -fvisibility-inlines-hidden)
+# GCC accepts unknown -Wno-* flags silently (only printing a note), so CEF's
+# CHECK_CXX_COMPILER_FLAG(-Wno-undefined-var-template ...) is falsely reported
+# as supported and the clang-only option ends up on every compile, polluting the log.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    list(REMOVE_ITEM CEF_CXX_COMPILER_FLAGS -Wno-undefined-var-template)
+endif()
 list(APPEND CEF_CXX_COMPILER_FLAGS -std=c++20)
 list(APPEND CEF_EXE_LINKER_FLAGS -rdynamic)
 # remove the vulkan library from the files to copy so it doesn't fail after removing it
@@ -149,6 +157,9 @@ set(QJS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory(src/External/quickjs quickjs)
 if(BUILD_TESTING)
     add_subdirectory(src/External/Catch2)
+    # provides the catch_discover_tests() macro used to register individual test cases
+    list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src/External/Catch2/extras")
+    include(Catch)
 endif()
 # try to enable wayland builds when possible
 pkg_check_modules(WAYLAND_SUPPORT wayland-cursor wayland-protocols egl wayland-egl)
@@ -569,7 +580,11 @@ if(BUILD_TESTING)
         src/WallpaperEngine/Testing/Harnesses/RenderHarness.h
         src/WallpaperEngine/Testing/Cases/MouseCoordinates.cpp
         src/WallpaperEngine/Testing/Cases/PropertyParser.cpp
-        src/WallpaperEngine/Testing/Cases/GnomeX11Mode.cpp)
+        src/WallpaperEngine/Testing/Cases/GnomeX11Mode.cpp
+        src/WallpaperEngine/Testing/Cases/ColorBuilder.cpp
+        src/WallpaperEngine/Testing/Cases/MediaSourceHeaders.cpp
+        src/WallpaperEngine/Testing/Cases/CommandLineParsing.cpp
+        src/WallpaperEngine/Testing/Cases/ControlServerQueue.cpp)
 endif()
 
 add_library(
@@ -638,6 +653,8 @@ if (BUILD_TESTING)
     # tests should give as much output as possible
     target_compile_definitions(tests PRIVATE ERRORONLY=0)
     target_compile_definitions(tests PRIVATE DEMOMODE=0)
+    # register every TEST_CASE as an individual ctest entry
+    catch_discover_tests(tests)
 endif()
 
 if(X11_SUPPORT_FOUND)

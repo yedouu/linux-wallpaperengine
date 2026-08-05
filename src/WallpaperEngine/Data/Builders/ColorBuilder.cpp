@@ -38,12 +38,19 @@ WallpaperEngine::Data::Builders::ColorBuilder::parse (const std::string& value, 
 		number.at (0), number.at (0), number.at (1), number.at (1),
 		number.at (2), number.at (2), number.at (3), number.at (3)
 	    };
-	} else if (number.size () != 6 && number.size () != 8) {
+	} else if (number.size () == 6) {
+	    // #RRGGBB is fully opaque: append the alpha byte so the 24-bit value is
+	    // not mis-shifted (which used to drop the red channel entirely)
+	    constexpr char HexDigits[] = "0123456789abcdef";
+	    const auto alphaByte = static_cast<unsigned int> (std::clamp (alpha, 0.0f, 1.0f) * 255.0f);
+	    const std::string alphaHex { HexDigits[(alphaByte >> 4) & 0x0f], HexDigits[alphaByte & 0x0f] };
+	    number += alphaHex;
+	} else if (number.size () != 8) {
 	    sLog.exception ("Invalid CSS color notation for ", value);
 	}
 
-	// parse hex color
-	const auto color = std::stoi (number, nullptr, 16);
+	// parse hex color (stoul: an 8-digit hex value overflows int, e.g. 0xFF0000FF)
+	const auto color = std::stoul (number, nullptr, 16);
 
 	return WallpaperEngine::Data::Model::Color (
 	    (color >> 24 & 0xFF) / 255.0f, (color >> 16 & 0xFF) / 255.0f, (color >> 8 & 0xFF) / 255.0f,
