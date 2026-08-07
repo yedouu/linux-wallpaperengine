@@ -8,6 +8,15 @@
 
 using namespace WallpaperEngine::Render::Drivers::Output;
 
+GLFWWindowOutput::~GLFWWindowOutput () {
+    // GLFWWindowOutput owns the viewports it allocated with new (m_viewports);
+    // X11Output is different (m_viewports aliases m_screens), so free here.
+    for (auto& [name, viewport] : this->m_viewports) {
+        delete viewport;
+    }
+    this->m_viewports.clear ();
+}
+
 GLFWWindowOutput::GLFWWindowOutput (ApplicationContext& context, VideoDriver& driver) : Output (context, driver) {
     if (this->m_context.settings.render.mode != Application::ApplicationContext::NORMAL_WINDOW
 	&& this->m_context.settings.render.mode != Application::ApplicationContext::EXPLICIT_WINDOW
