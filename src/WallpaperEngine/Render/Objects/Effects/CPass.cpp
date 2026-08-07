@@ -74,6 +74,11 @@ CPass::~CPass () {
     this->m_referenceUniforms.clear ();
     this->m_attribs.clear ();
 
+    // Shader holds the ShaderUnits (compiled shader source with large strings) and
+    // user settings; it was allocated with new in setupShaders but never freed.
+    delete this->m_shader;
+    this->m_shader = nullptr;
+
     glDeleteVertexArrays (1, &m_vao);
     this->m_vao = GL_NONE;
 
