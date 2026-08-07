@@ -57,6 +57,23 @@ CPass::CPass (
 }
 
 CPass::~CPass () {
+    // Release heap-allocated uniform/attribute entries. These were allocated with
+    // new in addUniform/addAttribute but never freed, leaking on every wallpaper switch.
+    // Note: entry->value may reference external variables (system uniforms / attribs),
+    // so only the entry objects themselves are freed to avoid double-free.
+    for (const auto& [name, entry] : this->m_uniforms) {
+        delete entry;
+    }
+    for (const auto& [name, entry] : this->m_referenceUniforms) {
+        delete entry;
+    }
+    for (auto* entry : this->m_attribs) {
+        delete entry;
+    }
+    this->m_uniforms.clear ();
+    this->m_referenceUniforms.clear ();
+    this->m_attribs.clear ();
+
     glDeleteVertexArrays (1, &m_vao);
     this->m_vao = GL_NONE;
 
