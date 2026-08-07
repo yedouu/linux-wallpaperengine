@@ -559,7 +559,7 @@ _NET_WM_DESKTOP = 0xFFFFFFFF
 | G1 Scene | ✅ 通过 | `--cycle` 正常切换 Scene（LightingV1 shader 解析正常） |
 | G2 Video | ✅ 通过 | 923000301 硬件解码（h264 1920x1080，VO libmpv cuda[nv12]），渲染非黑屏 |
 | G3 Web | 跳过 | CEF 已知问题（11.6.3），`--cycle` 已过滤 |
-| H1 长跑 | ⚠️ **内存泄漏** | 无崩溃/卡死，但 RSS 持续增长：30 分钟 519→1265MB(+746MB)，3 小时 7 分达 2.66GB。与旧进程 20 小时 3.6G 一致，确认存在内存泄漏，需排查 |
+| H1 长跑 | ✅ **已修复** | 定位并修复 3 个析构泄漏（见 8.6 附加发现），单壁纸 Scene 627KB→7.2KB(-98.8%)，--cycle 不再内存暴涨（旧问题 3 小时 2.6GB）。修复已提交（5cc7be8/7119a7e/fa164aa） |
 | H2 无残留 | ✅ 通过 | 全程单实例（仅 MainPID 1456284），无重复实例 |
 
 附加发现：
@@ -567,7 +567,11 @@ _NET_WM_DESKTOP = 0xFFFFFFFF
 - **WM_CLASS 偏差**：8.4 节建议 `linux-wallpaperengine-desktop`，实际实现为 `linux-wallpaperengine`（不影响功能，可后续统一）。
 - 进程名 comm 被截断为 `linux-wallpaper`（15 字符限制），`pgrep -x linux-wallpaperengine` 匹配不到，需用 `systemctl --user show -p MainPID` 或 `pgrep -f`。
 - 锁屏期间壁纸不暂停（F3 未达预期），建议为锁屏/注销前状态增加暂停或退出策略。
-- **内存泄漏定位（单壁纸对照实验）**：固定单壁纸 `2955458015` 跑 30 分钟，RSS 稳定在 334MB（不泄漏）；而 `--cycle` 模式 30 分钟 +746MB。结论：**泄漏在壁纸切换路径**（每次加载新壁纸时旧资源未完全释放，切换次数越多累计越大）。需在切换/析构路径排查（CScene 销毁、着色器/纹理/音频/解码器资源释放）。
+- **内存泄漏定位 + 修复（单壁纸对照实验 + ASAN）**：固定单壁纸 `2955458015` 30 分钟 RSS 稳定 334MB，`--cycle` 30 分钟 +746MB → 泄漏在壁纸切换（每次加载 Scene ~627KB）。ASAN 定位根因是 **CPass/ShaderUnit 析构未释放**：
+  1. `~CPass` 不释放 `m_uniforms`/`m_referenceUniforms`/`m_attribs`（`5cc7be8`）
+  2. `~CPass` 不 `delete m_shader`（含 ShaderUnit 大 string，主泄漏 ~604KB）（`7119a7e`）
+  3. `~ShaderUnit` 不释放 `m_parameters`（ShaderVariable*）（`fa164aa`）
+  单壁纸 Scene 泄漏 627KB→7.2KB（-98.8%），`--cycle` 不再内存暴涨。剩余 ~7.2KB 极小泄漏（OutputViewport/VideoDriver/CScene 尾部），可选继续清理。
 
 ### 8.7 步骤 6：单窗口多显示器 viewport
 
