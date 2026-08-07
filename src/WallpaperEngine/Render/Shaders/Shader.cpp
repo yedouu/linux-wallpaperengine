@@ -50,14 +50,14 @@ Shader::ParameterSearchResult Shader::findParameter (const std::string& name) co
 
     for (const auto& cur : this->m_vertex.getParameters ()) {
 	if (cur->getIdentifierName () == name) {
-	    vertex = cur;
+	    vertex = cur.get ();
 	    break;
 	}
     }
 
     for (const auto& cur : this->m_fragment.getParameters ()) {
 	if (cur->getIdentifierName () == name) {
-	    fragment = cur;
+	    fragment = cur.get ();
 	    break;
 	}
     }

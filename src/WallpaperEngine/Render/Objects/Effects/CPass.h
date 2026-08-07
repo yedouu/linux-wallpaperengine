@@ -195,7 +195,7 @@ private:
      */
     std::map<int, std::shared_ptr<TextureChainEntry>> m_textures = {};
 
-    Render::Shaders::Shader* m_shader = nullptr;
+    std::unique_ptr<Render::Shaders::Shader> m_shader;
 
     std::shared_ptr<const CFBO> m_drawTo = nullptr;
     std::shared_ptr<const TextureProvider> m_input = nullptr;

@@ -48,7 +48,7 @@ public:
     /**
      * @return The parameters the shader unit has as input
      */
-    [[nodiscard]] const std::vector<Variables::ShaderVariable*>& getParameters () const;
+    [[nodiscard]] const std::vector<std::unique_ptr<Variables::ShaderVariable>>& getParameters () const;
     /**
      * @return The textures this shader unit requires
      */
@@ -147,7 +147,7 @@ private:
     /**
      * The parameters the shader needs
      */
-    std::vector<Variables::ShaderVariable*> m_parameters = {};
+    std::vector<std::unique_ptr<Variables::ShaderVariable>> m_parameters = {};
     /**
      * Pre-defined values for the combos
      */

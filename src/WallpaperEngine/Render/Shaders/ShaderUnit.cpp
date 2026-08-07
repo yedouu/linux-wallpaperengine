@@ -94,9 +94,7 @@ void ShaderUnit::preprocess () {
 }
 
 ShaderUnit::~ShaderUnit () {
-    for (auto* p : this->m_parameters) {
-        delete p;
-    }
+    // m_parameters holds unique_ptr, so it frees itself (RAII).
     this->m_parameters.clear ();
 }
 
@@ -640,7 +638,7 @@ void ShaderUnit::parseParameterConfiguration (
 	parameter->setIdentifierName (*material);
 	parameter->setName (name);
 
-	this->m_parameters.push_back (parameter);
+	this->m_parameters.emplace_back (parameter);
     }
 }
 
@@ -728,5 +726,5 @@ const std::string& ShaderUnit::compile () {
     return this->m_final;
 }
 
-const std::vector<Variables::ShaderVariable*>& ShaderUnit::getParameters () const { return this->m_parameters; }
+const std::vector<std::unique_ptr<Variables::ShaderVariable>>& ShaderUnit::getParameters () const { return this->m_parameters; }
 const TextureMap& ShaderUnit::getTextures () const { return this->m_defaultTextures; }

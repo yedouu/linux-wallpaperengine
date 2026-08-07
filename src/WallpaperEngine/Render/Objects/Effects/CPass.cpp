@@ -74,10 +74,8 @@ CPass::~CPass () {
     this->m_referenceUniforms.clear ();
     this->m_attribs.clear ();
 
-    // Shader holds the ShaderUnits (compiled shader source with large strings) and
-    // user settings; it was allocated with new in setupShaders but never freed.
-    delete this->m_shader;
-    this->m_shader = nullptr;
+    // m_shader is a unique_ptr, so it frees itself (RAII).
+    this->m_shader.reset ();
 
     glDeleteVertexArrays (1, &m_vao);
     this->m_vao = GL_NONE;
@@ -565,7 +563,7 @@ const MaterialPass& CPass::getPass () const { return this->m_pass; }
 
 std::optional<std::reference_wrapper<std::string>> CPass::getTarget () const { return this->m_target; }
 
-Render::Shaders::Shader* CPass::getShader () const { return this->m_shader; }
+Render::Shaders::Shader* CPass::getShader () const { return this->m_shader.get (); }
 
 GLuint CPass::getProgramID () const { return this->m_programID; }
 
@@ -643,7 +641,7 @@ void CPass::setupShaders () {
 	passTextures.insert_or_assign (index, texture);
     }
 
-    this->m_shader = new Render::Shaders::Shader (
+    this->m_shader = std::make_unique<Render::Shaders::Shader> (
 	this->m_renderable.getAssetLocator (), shaderName, this->m_combos, this->m_override.combos, passTextures,
 	this->m_override.textures, this->m_override.constants
     );
@@ -987,13 +985,13 @@ template <typename T> void CPass::addUniform (const std::string& name, UniformTy
 void CPass::setupShaderVariables () {
     for (const auto& cur : this->m_shader->getVertex ().getParameters ()) {
 	if (!this->m_uniforms.contains (cur->getName ())) {
-	    this->addUniform (cur);
+	    this->addUniform (cur.get ());
 	}
     }
 
     for (const auto& cur : this->m_shader->getFragment ().getParameters ()) {
 	if (!this->m_uniforms.contains (cur->getName ())) {
-	    this->addUniform (cur);
+	    this->addUniform (cur.get ());
 	}
     }
 
