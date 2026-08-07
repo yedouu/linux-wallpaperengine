@@ -93,6 +93,13 @@ void ShaderUnit::preprocess () {
     }
 }
 
+ShaderUnit::~ShaderUnit () {
+    for (auto* p : this->m_parameters) {
+        delete p;
+    }
+    this->m_parameters.clear ();
+}
+
 void ShaderUnit::preprocessVariables () {
     size_t start = 0, end = 0;
     while ((end = this->m_preprocessed.find ('\n', start)) != std::string::npos) {

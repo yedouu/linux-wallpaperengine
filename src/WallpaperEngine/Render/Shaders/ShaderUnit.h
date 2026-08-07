@@ -27,7 +27,7 @@ public:
 	const ShaderConstantMap& constants, const TextureMap& passTextures, const TextureMap& overrideTextures,
 	const ComboMap& combos, const ComboMap& overrideCombos
     );
-    ~ShaderUnit () = default;
+    ~ShaderUnit ();
 
     /**
      * Links this shader unit with another unit so they're treated as one
