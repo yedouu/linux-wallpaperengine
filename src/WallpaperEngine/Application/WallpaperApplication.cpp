@@ -34,11 +34,28 @@
 #include <fstream>
 #include <set>
 
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
+
 #define FULLSCREEN_CHECK_WAIT_TIME 250
 
 float g_Time;
 float g_TimeLast;
 float g_Daytime;
+
+namespace {
+void releaseUnusedHeapMemory () noexcept {
+#if defined(__GLIBC__)
+    // Large scene textures and decoded model data are allocated on the glibc heap.
+    // Their owners are destroyed during a wallpaper switch, but glibc commonly
+    // retains the freed pages and leaves RSS at the largest scene's high-water mark.
+    // Switching is infrequent, so trim once here instead of applying aggressive
+    // allocator tuning to every allocation made by the process.
+    malloc_trim (0);
+#endif
+}
+} // namespace
 
 // Crash blacklist: write current wallpaper ID before dying.
 static std::string g_currentWallpaperPath;
@@ -84,6 +101,35 @@ WallpaperApplication::WallpaperApplication (ApplicationContext& context) : m_con
     this->loadBackgrounds ();
     this->setupProperties ();
     this->setupBrowser ();
+}
+
+WallpaperApplication::~WallpaperApplication () {
+    // Stop the control thread before tearing down any state it can enqueue work for.
+    this->m_controlServer.reset ();
+
+    // CWallpaper, TextureCache and their FBO/texture objects issue OpenGL deletion
+    // calls from their destructors. They must therefore die before the video driver
+    // destroys the GLFW window and its OpenGL context. CWeb also depends on the CEF
+    // browser context, and TextureCache owns callbacks registered with MediaSource.
+    if (this->m_videoDriver != nullptr) {
+	this->makeAnyViewportCurrent ();
+    }
+    this->m_renderContext.reset ();
+
+    this->m_browserContext.reset ();
+
+    // AudioContext streams depend on the driver, detector and recorder.
+    this->m_audioContext.reset ();
+    this->m_audioDriver.reset ();
+    this->m_audioDetector.reset ();
+    this->m_audioRecorder.reset ();
+
+    this->m_fullScreenDetector.reset ();
+    this->m_videoDriver.reset ();
+    this->m_mediaSource.reset ();
+
+    // SDL must remain initialized until all SDL-backed audio objects are gone.
+    SDL_Quit ();
 }
 
 void WallpaperApplication::initializeSubsystems () {
@@ -554,6 +600,11 @@ void WallpaperApplication::advancePlaylist (
 		    this->m_browserContext.get (), scaling, clamp
 		)
 	    );
+
+	    // The cache owns textures weakly; remove entries whose wallpaper owners died
+	    // during replacement so the key table also remains bounded during --cycle.
+	    this->m_renderContext->pruneTextureCache ();
+	    releaseUnusedHeapMemory ();
 	}
 
 	this->m_context.settings.general.screenBackgrounds[screen] = nextPath;
@@ -1073,8 +1124,6 @@ void WallpaperApplication::cleanup () {
 #if DEMOMODE
     close_encoder ();
 #endif /* DEMOMODE */
-
-    SDL_Quit ();
 }
 
 void WallpaperApplication::show () {
@@ -1166,6 +1215,9 @@ void WallpaperApplication::setWallpaper (const std::filesystem::path& path) {
                     *m_audioContext, m_browserContext.get (),
                     m_context.settings.render.window.scalingMode,
                     m_context.settings.render.window.clamp));
+            // Remove weak cache entries left by the replaced wallpaper.
+            m_renderContext->pruneTextureCache ();
+            releaseUnusedHeapMemory ();
         }
         sLog.out ("Wallpaper loaded: ", path.filename ().string ());
     } catch (const std::exception& e) {

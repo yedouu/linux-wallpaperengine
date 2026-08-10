@@ -37,10 +37,6 @@ TextureCache::TextureCache (RenderContext& context) : Helpers::ContextAware (con
     // load the latest texture (if available)
     this->m_currentThumbnail->load ();
 
-    // add these to the cache and return the right one
-    this->store ("$mediaThumbnail", this->m_currentThumbnail);
-    this->store ("$mediaPreviousThumbnail", this->m_previousThumbnail);
-
     this->m_mediaCallback = this->getContext ().getMediaSource ().addAlbumArtListener (
 	[this] (const Media::MediaSource::MediaInfo& data) {
 	    if (this->m_currentThumbnail->isReady ()) {
@@ -56,43 +52,41 @@ TextureCache::TextureCache (RenderContext& context) : Helpers::ContextAware (con
 
 TextureCache::~TextureCache () { this->m_mediaCallback (); }
 
-std::shared_ptr<const TextureProvider> TextureCache::resolve (const std::string& filename) {
-    if (const auto found = this->m_textureCache.find (filename); found != this->m_textureCache.end ()) {
-	return found->second;
+std::shared_ptr<const TextureProvider>
+TextureCache::resolve (const std::string& filename, const Assets::AssetLocator& assetLocator) {
+    // Media thumbnails are process-wide dynamic textures rather than project assets.
+    if (filename == "$mediaThumbnail") {
+	return this->m_currentThumbnail;
+    }
+    if (filename == "$mediaPreviousThumbnail") {
+	return this->m_previousThumbnail;
     }
 
-    // search for the texture in all the different containers just in case
-    for (const auto& project : this->getContext ().getApp ().getBackgrounds () | std::views::values) {
-	try {
-	    const auto contents = project->assetLocator->texture (filename);
-	    auto stream = BinaryReader (contents);
+    const TextureKey key { &assetLocator, filename };
+    if (const auto found = this->m_textureCache.find (key); found != this->m_textureCache.end ()) {
+	if (auto texture = found->second.lock ()) {
+	    return texture;
+	}
+	this->m_textureCache.erase (found);
+    }
 
-	    // Create metadata loader lambda that captures the assetLocator
-	    // so we need to construct the full path here
-	    auto metadataLoader = [&project] (const std::string& metaFilename) -> std::string {
-		std::filesystem::path fullPath = std::filesystem::path ("materials") / metaFilename;
-		return project->assetLocator->readString (fullPath);
-	    };
+    const auto contents = assetLocator.texture (filename);
+    auto stream = BinaryReader (contents);
+    auto metadataLoader = [&assetLocator] (const std::string& metaFilename) -> std::string {
+	const std::filesystem::path fullPath = std::filesystem::path ("materials") / metaFilename;
+	return assetLocator.readString (fullPath);
+    };
 
-	    auto parsedTexture = TextureParser::parse (stream, filename, metadataLoader);
-	    auto texture = std::make_shared<CTexture> (this->getContext (), std::move (parsedTexture));
-
+    auto parsedTexture = TextureParser::parse (stream, filename, metadataLoader);
+    auto texture = std::make_shared<CTexture> (this->getContext (), std::move (parsedTexture));
 #if !NDEBUG
-	    glObjectLabel (GL_TEXTURE, texture->getTextureID (0), -1, filename.c_str ());
+	glObjectLabel (GL_TEXTURE, texture->getTextureID (0), -1, filename.c_str ());
 #endif
 
-	    this->store (filename, texture);
-
-	    return texture;
-	} catch (AssetLoadException&) {
-	    // ignored, this happens if we're looking at the wrong background
-	}
-    }
-
-    // TODO: FILL IN WITH A CHECKERED PATTERN TEXTURE INSTEAD?
-    throw AssetLoadException ("Cannot find file", filename, std::error_code ());
+    this->m_textureCache.insert_or_assign (key, texture);
+    return texture;
 }
 
-void TextureCache::store (const std::string& name, std::shared_ptr<const TextureProvider> texture) {
-    this->m_textureCache.insert_or_assign (name, texture);
+void TextureCache::pruneExpired () {
+    std::erase_if (this->m_textureCache, [] (const auto& entry) { return entry.second.expired (); });
 }

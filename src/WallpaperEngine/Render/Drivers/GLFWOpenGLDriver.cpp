@@ -83,17 +83,18 @@ GLFWOpenGLDriver::GLFWOpenGLDriver (const char* windowTitle, ApplicationContext&
     // setup output
     if (context.settings.render.mode == ApplicationContext::EXPLICIT_WINDOW
 	|| context.settings.render.mode == ApplicationContext::NORMAL_WINDOW) {
-	m_output = new WallpaperEngine::Render::Drivers::Output::GLFWWindowOutput (context, *this);
+	m_output = std::make_unique<WallpaperEngine::Render::Drivers::Output::GLFWWindowOutput> (context, *this);
     }
     else if (context.settings.render.mode == ApplicationContext::GNOME_X11_DESKTOP_WINDOW) {
-	auto* gnomeOut = new WallpaperEngine::Render::Drivers::Output::GNOMEX11WindowOutput (context, *this);
-	m_output = gnomeOut;
+	auto gnomeOut
+	    = std::make_unique<WallpaperEngine::Render::Drivers::Output::GNOMEX11WindowOutput> (context, *this);
 	// Apply EWMH desktop properties now that the GLFW window exists.
 	gnomeOut->configureDesktopWindow ();
+	m_output = std::move (gnomeOut);
     }
 #ifdef ENABLE_X11
     else if (context.settings.render.mode == ApplicationContext::DESKTOP_BACKGROUND) {
-	m_output = new WallpaperEngine::Render::Drivers::Output::X11Output (context, *this);
+	m_output = std::make_unique<WallpaperEngine::Render::Drivers::Output::X11Output> (context, *this);
     }
 #else
     else {
@@ -102,7 +103,18 @@ GLFWOpenGLDriver::GLFWOpenGLDriver (const char* windowTitle, ApplicationContext&
 #endif
 }
 
-GLFWOpenGLDriver::~GLFWOpenGLDriver () { glfwTerminate (); }
+GLFWOpenGLDriver::~GLFWOpenGLDriver () {
+    // Output owns the viewports and may release native X11 resources. Destroy it
+    // while the GLFW window and its OpenGL context are still valid.
+    this->m_output.reset ();
+
+    if (this->m_window != nullptr) {
+	glfwDestroyWindow (this->m_window);
+	this->m_window = nullptr;
+    }
+
+    glfwTerminate ();
+}
 
 Output::Output& GLFWOpenGLDriver::getOutput () { return *this->m_output; }
 

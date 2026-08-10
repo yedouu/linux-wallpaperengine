@@ -7,6 +7,7 @@
 #include "WallpaperEngine/Render/Drivers/VideoDriver.h"
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <memory>
 
 namespace WallpaperEngine::Application {
 class ApplicationContext;
@@ -39,7 +40,7 @@ public:
 private:
     ApplicationContext& m_context;
     Input::Drivers::GLFWMouseInput m_mouseInput;
-    Output::Output* m_output = nullptr;
+    std::unique_ptr<Output::Output> m_output = nullptr;
     GLFWwindow* m_window = nullptr;
     uint32_t m_frameCounter = 0;
 };

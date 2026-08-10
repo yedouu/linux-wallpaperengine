@@ -567,6 +567,11 @@ _NET_WM_DESKTOP = 0xFFFFFFFF
 - **WM_CLASS 偏差**：8.4 节建议 `linux-wallpaperengine-desktop`，实际实现为 `linux-wallpaperengine`（不影响功能，可后续统一）。
 - 进程名 comm 被截断为 `linux-wallpaper`（15 字符限制），`pgrep -x linux-wallpaperengine` 匹配不到，需用 `systemctl --user show -p MainPID` 或 `pgrep -f`。
 - 锁屏期间壁纸不暂停（F3 未达预期），建议为锁屏/注销前状态增加暂停或退出策略。
+- **内存泄漏定位 + 修复（TextureCache 累积，2026-08-07）**：长跑 `--cycle` 32 次切换 RSS 从 114MB → 2.27GB（~67MB/次持续增长）。ASAN + LSan 定位：单壁纸退出只报 7.4KB definitely lost（CScene/CWallpaper/CVideo 析构均正常调用），但 **`TextureCache`（RenderContext 持有的全局 `map<string, shared_ptr<TextureProvider>>`）累积所有壁纸的图片纹理**——旧壁纸析构释放 CWallpaper/CFBO/CTexture，但 TextureCache 仍持有每壁纸纹理的 shared_ptr → GL 纹理在运行中无限累积；退出时 TextureCache 才释放，因此 LSan 无法体现运行期 GPU 纹理滞留。
+  - 修复：普通纹理缓存改为按 `(AssetLocator, filename)` 隔离的 `weak_ptr`，由当前壁纸决定纹理生命周期；媒体缩略图保留独立强引用。壁纸切换后调用 `RenderContext::pruneTextureCache()` 移除过期 key，避免跨项目同名纹理串用，同时保持缓存表大小有界。
+  - 后续逐素材对照确认大型 Scene 销毁后 glibc 会保留大量空闲 heap 页：默认配置切回基准壁纸仍可停留在 1.30GB RSS，而 `MALLOC_TRIM_THRESHOLD_=0` 对照可回落到约 276MB。最终在壁纸切换完成后按 `__GLIBC__` 条件调用一次 `malloc_trim(0)`，只在低频切换点归还空闲页，不对其他 libc 或普通分配路径施加全局激进参数。
+  - 最终实测（默认环境、未设置 malloc 环境变量）：四张最高内存 Scene 切回基准后的 RSS 为 239/237/295/278MB；21 个非 Web 壁纸按固定顺序连续两遍未再形成 GB 级堆高水位。Video 首次使用会保留约 100–160MB 的 MPV/解码器一次性工作集和 1 个线程，但额外三轮 Video 后基准 RSS 稳定在约 490–506MB，不再累计。
+  - 验证（Release 实测）：6 次切换 RSS **稳定 ~510-578MB**（修复前每次 +67MB 无限涨）。
 - **内存泄漏定位 + 修复（单壁纸对照实验 + ASAN）**：固定单壁纸 `2955458015` 30 分钟 RSS 稳定 334MB，`--cycle` 30 分钟 +746MB → 泄漏在壁纸切换（每次加载 Scene ~627KB）。ASAN 定位根因是 **CPass/ShaderUnit 析构未释放**：
   1. `~CPass` 不释放 `m_uniforms`/`m_referenceUniforms`/`m_attribs`（`5cc7be8`）
   2. `~CPass` 不 `delete m_shader`（含 ShaderUnit 大 string，主泄漏 ~604KB）（`7119a7e`）
